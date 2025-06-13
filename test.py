@@ -25,8 +25,12 @@ def extract_text_from_lines(lines):
     for line in lines:
         line_text = ""
         for span in line["spans"]:
-            if "italic" in span["font"].lower():
+            cprint.black(span)
+            span_font = span["font"].lower()
+            if "italic" in span_font:
                 line_text += f"<i>{span["text"]}</i>"
+            elif "bold" in span_font:
+                line_text += f"<b>{span["text"]}</b>"
             else: 
                 line_text += span["text"]
         text += f"<p>{line_text}</p>"
@@ -44,7 +48,7 @@ def extract_pdf(doc: pymupdf.Document):
     content = ""
     images = {}
 
-    for i in range(0, doc.page_count):
+    for i in range(4, 5):
         cprint.blue(f"-----PAGE {i+1}------")
         page = doc[i]
         page_height = page.rect.height
