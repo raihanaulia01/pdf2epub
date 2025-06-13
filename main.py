@@ -13,11 +13,23 @@ def create_epub():
 def split_to_chapters(full_text):
     pass
 
+# def extract_text_from_lines(lines):
+#     text = ""
+#     for line in lines:
+#         for span in line["spans"]:
+#             text += f"<p>{span["text"]}</p>"
+#     return text
+
 def extract_text_from_lines(lines):
     text = ""
     for line in lines:
+        line_text = ""
         for span in line["spans"]:
-            text += f"<p>{span["text"]}</p>"
+            if "italic" in span["font"].lower():
+                line_text += f"<i>{span["text"]}</i>"
+            else: 
+                line_text += span["text"]
+        text += f"<p>{line_text}</p>"
     return text
 
 def extract_img_from_xref(doc, xref):
@@ -112,9 +124,12 @@ doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
 # doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
 # doc = pymupdf.open("test_pdf/RascalV1.pdf")
 result = extract_pdf(doc)
+
 for i, (key, value) in enumerate(result[1].items()):
     print(i, key)
     with open(f"test_images/img{i}-{key}", "wb") as f:
         f.write(value)
-print(f"\n\n{result[0]}")
+if (input("Print result? (Y/n) ").strip() == 'Y'):
+    print(f"\n\n{result[0]}")
+    
 cprint.green("Done")
