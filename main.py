@@ -1,8 +1,11 @@
 import ColorPrint as cprint
 import pymupdf
 from ebooklib import epub
+import os
 
+os.makedirs("test_images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 65
+IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% of the page
 
 def create_epub():
     pass
@@ -10,67 +13,108 @@ def create_epub():
 def split_to_chapters(full_text):
     pass
 
-# TODO change this to extract html. add the images in the html like from epubscraper
+def extract_text_from_lines(lines):
+    text = ""
+    for line in lines:
+        for span in line["spans"]:
+            text += f"<p>{span["text"]}</p>"
+    return text
+
+def extract_img_from_xref(doc, xref):
+    pix = pymupdf.Pixmap(doc, xref)
+    if pix.n - pix.alpha > 3:
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+    return pix
+
+# TODO change this to extract html. add the images in the html like from epubscraper. use toc for chapters?
 def extract_pdf(doc: pymupdf.Document):
-    ignored_images = []
+    print(doc.get_toc())
     content = ""
+    images = {}
 
     for i in range(0, doc.page_count):
         cprint.blue(f"-----PAGE {i+1}------")
         page = doc[i]
         page_height = page.rect.height
-        cprint.black(page_height)
-        blocks = page.get_text("blocks")
-        clean_text = ""
+        # cprint.black(page_height)
+        dicts = page.get_text("dict", sort=True)
+        img_count = 0
+        img_list = page.get_images()
+        get_images_count = len(img_list)
 
-        # ignore header and footer with threshold
-        for block in blocks:
-            x0,y0,x1,y1,text, *_ =  block
-            cprint.black(f"({x0}, {y0}) to ({x1}, {y1}): {text}")
-            height = page.rect.height
-
-            if y0 > HEADER_FOOTER_THRESHOLD and y0 < height - HEADER_FOOTER_THRESHOLD:
-                clean_text += text + "\n"
-
-        # print(page.get_text())
-        print(clean_text)
-
-        image_list = page.get_images()
-        if image_list:
-            cprint.cyan(f"Found {len(image_list)} images")
-        
-        # extract images
-        for img_index, img in enumerate(image_list, start=1):
-            xref = img[0]
-            image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
-            image_height = image_rects[3] - image_rects[1]
-
-            # check if the img position is in the bottom 30% of the image, and ignores it
-            if (image_rects[1] > page_height * 0.7) or (image_height < 5): 
-                cprint.yellow(f"Ignored image at page {i+1}_{img_index} position {image_rects}")
-                ignored_images.append((i, xref))
-                continue
-
-            cprint.black(f"page {i+1} index {img_index} : {page.get_image_rects(xref)}")
-            pix = pymupdf.Pixmap(doc, xref)
-
-            if pix.n - pix.alpha > 3:
-                pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+        for element in dicts["blocks"]:
+            if element["type"] == 0: # text block
+                # cprint.blue("Text")
+                # ignore text blocks in headers and footers
+                if element["bbox"][1] <= HEADER_FOOTER_THRESHOLD or element["bbox"][1] >= page_height - HEADER_FOOTER_THRESHOLD:
+                    continue
+                text = extract_text_from_lines(element["lines"])
+                content += text
+                # cprint.black(text)
             
-            pix.save(f"test_images/page_{i+1}-image_{img_index}.png")
-            pix = None
+            elif element["type"] == 1: # image
+                # cprint.blue("Image")
+                img_count += 1
+                img_data = element["image"]
+                # cprint.black(xref)
+                img_bbox = element["bbox"]
+                img_height =  img_bbox[3] - img_bbox[1]
+                img_filename = f"page_{i+1}-image_{img_count}.png"
 
-    for ignored_index, ignored in enumerate(ignored_images):
-        ignored_pix = pymupdf.Pixmap(doc, ignored[1])
+                if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_height < 5): # check if the img position is in the bottom 30% of the image, and ignores it
+                    cprint.yellow(f"ignored image {img_height} bbox: {img_bbox} ")
+                    continue
 
-        if ignored_pix.n - ignored_pix.alpha > 3:
-            ignored_pix = pymupdf.Pixmap(pymupdf.csRGB, ignored_pix)
+                # if it's an xref
+                # cprint.red("CHECK")
+                if isinstance(img_data, int):
+                    xref = img_data
+                    if xref == 0:
+                        continue
+                    
+                    pix = extract_img_from_xref(doc, xref)
+                    images[img_filename] = pix.tobytes()
+                    pix = None
+                    cprint.yellow("XREF")
+                elif isinstance(img_data, bytes): # otherwise it's the raw data
+                    images[img_filename] = img_data
+                    cprint.yellow("DATA")
+                else:
+                    cprint.red("NOT RECOGNIZED")
+                    continue
 
-        ignored_pix.save(f"test_ignored_images/ignored_page_{ignored[0]}-image_{ignored_index}.png")
-        # print(ignored)
+                # pix.save(f"test_images/{img_filename}")
+                content += f'<img src="test_images/{img_filename}" alt="Image {img_count} on page {i+1}" />\n'
+            else:
+                cprint.red(element["type"])
+        # cprint.green(f"img count: {img_count}")
+        if img_count < get_images_count:
+            cprint.red(f"Missed {get_images_count - img_count} images. Extracting using get_images")
+            for index, img in enumerate(img_list):
+                xref = img[0]
+                image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
+                image_height = image_rects[3] - image_rects[1]
+                full_img_filename = f"page_{i+1}-full_{index}.png"
+
+                if xref == 0:
+                    continue
+                # check if the img position is in the bottom 30% of the image, and ignores it
+                if (image_rects[1] > page_height * 0.7) or (image_height < 5):
+                    continue 
+
+                pix = extract_img_from_xref(doc, img[0])
+                images[full_img_filename] = pix.tobytes()
+                content += f'<img src="test_images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
+
+    return content, images
 
 doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
 # doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
 # doc = pymupdf.open("test_pdf/RascalV1.pdf")
-extract_pdf(doc)
+result = extract_pdf(doc)
+for i, (key, value) in enumerate(result[1].items()):
+    print(i, key)
+    with open(f"test_images/img{i}-{key}", "wb") as f:
+        f.write(value)
+print(f"\n\n{result[0]}")
 cprint.green("Done")
