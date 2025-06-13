@@ -1,29 +1,35 @@
 import ColorPrint as cprint
 import pymupdf
-import pypub
+from ebooklib import epub
 
-HEADER_FOOTER_THRESHOLD = 30
+HEADER_FOOTER_THRESHOLD = 65
 
 def create_epub():
     pass
 
+def split_to_chapters(full_text):
+    pass
+
+# TODO change this to extract html. add the images in the html like from epubscraper
 def extract_pdf(doc: pymupdf.Document):
     ignored_images = []
+    content = ""
 
     for i in range(0, doc.page_count):
         cprint.blue(f"-----PAGE {i+1}------")
         page = doc[i]
         page_height = page.rect.height
+        cprint.black(page_height)
         blocks = page.get_text("blocks")
         clean_text = ""
 
         # ignore header and footer with threshold
         for block in blocks:
             x0,y0,x1,y1,text, *_ =  block
-            # cprint.black(f"({x0}, {y0}) to ({x1}, {y1}): {text}")
+            cprint.black(f"({x0}, {y0}) to ({x1}, {y1}): {text}")
             height = page.rect.height
 
-            if y0 > HEADER_FOOTER_THRESHOLD and y1 < height - HEADER_FOOTER_THRESHOLD:
+            if y0 > HEADER_FOOTER_THRESHOLD and y0 < height - HEADER_FOOTER_THRESHOLD:
                 clean_text += text + "\n"
 
         # print(page.get_text())
@@ -45,7 +51,7 @@ def extract_pdf(doc: pymupdf.Document):
                 ignored_images.append((i, xref))
                 continue
 
-            cprint.lightgrey(f"page {i+1} index {img_index} : {page.get_image_rects(xref)}")
+            cprint.black(f"page {i+1} index {img_index} : {page.get_image_rects(xref)}")
             pix = pymupdf.Pixmap(doc, xref)
 
             if pix.n - pix.alpha > 3:
@@ -54,7 +60,6 @@ def extract_pdf(doc: pymupdf.Document):
             pix.save(f"test_images/page_{i+1}-image_{img_index}.png")
             pix = None
 
-    print("Ignored images:")
     for ignored_index, ignored in enumerate(ignored_images):
         ignored_pix = pymupdf.Pixmap(doc, ignored[1])
 
@@ -62,7 +67,7 @@ def extract_pdf(doc: pymupdf.Document):
             ignored_pix = pymupdf.Pixmap(pymupdf.csRGB, ignored_pix)
 
         ignored_pix.save(f"test_ignored_images/ignored_page_{ignored[0]}-image_{ignored_index}.png")
-        print(ignored)
+        # print(ignored)
 
 doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
 # doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
