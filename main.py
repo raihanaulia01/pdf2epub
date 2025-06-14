@@ -79,11 +79,11 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                         continue
                     
                     pix = extract_img_from_xref(doc, xref)
-                    images[img_filename] = pix.tobytes()
+                    images[img_filename] = (img_filename, pix.tobytes())
 
                     pix = None
                 elif isinstance(img_data, bytes): # otherwise it's the raw data
-                    images[img_filename] = img_data
+                    images[img_filename] = (img_filename, img_data)
                 else:
                     cprint.red("Image not recognized!")
                     continue
@@ -108,7 +108,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                     continue 
 
                 pix = extract_img_from_xref(doc, img[0])
-                images[full_img_filename] = pix.tobytes()
+                images[full_img_filename] = (full_img_filename, pix.tobytes())
                 content += f'<img src="test_images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
     return content, images
@@ -123,8 +123,8 @@ result = extract_pdf(doc)
 # save images
 for i, (key, value) in enumerate(result[1].items()):
     print(i, key)
-    with open(f"test_output/test_images/page_{i+1}-image_{i}.png", "wb") as f: # img{i}-{key}
-        f.write(value)
+    with open(f"test_output/test_images/{value[0]}", "wb") as f: # value[0] is filename, value[1] is the data
+        f.write(value[1])
 
 if (input("Print result? (Y/n) ").strip() == 'Y'):
     print(f"\n\n{result[0]}")
