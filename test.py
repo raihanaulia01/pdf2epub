@@ -4,28 +4,23 @@ from ebooklib import epub
 import os
 
 os.makedirs("test_images", exist_ok=True)
-HEADER_FOOTER_THRESHOLD = 65
+HEADER_FOOTER_THRESHOLD = 65 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% of the page
 
+# TODO use first image as cover
 def create_epub():
     pass
 
-def split_to_chapters(full_text):
+# TODO use TOC to split chapters
+def split_to_chapters(doc, full_text):
+    print(doc.get_toc)
     pass
-
-# def extract_text_from_lines(lines):
-#     text = ""
-#     for line in lines:
-#         for span in line["spans"]:
-#             text += f"<p>{span["text"]}</p>"
-#     return text
 
 def extract_text_from_lines(lines):
     text = ""
     for line in lines:
         line_text = ""
         for span in line["spans"]:
-            cprint.black(span)
             span_font = span["font"].lower()
             if "italic" in span_font:
                 line_text += f"<i>{span["text"]}</i>"
@@ -38,21 +33,19 @@ def extract_text_from_lines(lines):
 
 def extract_img_from_xref(doc, xref):
     pix = pymupdf.Pixmap(doc, xref)
-    if pix.n - pix.alpha > 3:
+    if pix.n - pix.alpha > 3: # CMYK: convert to RGB first
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
-# TODO change this to extract html. add the images in the html like from epubscraper. use toc for chapters?
-def extract_pdf(doc: pymupdf.Document):
-    print(doc.get_toc())
+def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
+    end = doc.page_count if end == -1 else end
     content = ""
-    images = {}
+    images = {} # key: filename, value: image data
 
-    for i in range(4, 5):
+    for i in range(start, end):
         cprint.blue(f"-----PAGE {i+1}------")
         page = doc[i]
         page_height = page.rect.height
-        # cprint.black(page_height)
         dicts = page.get_text("dict", sort=True)
         img_count = 0
         img_list = page.get_images()
@@ -60,19 +53,15 @@ def extract_pdf(doc: pymupdf.Document):
 
         for element in dicts["blocks"]:
             if element["type"] == 0: # text block
-                # cprint.blue("Text")
                 # ignore text blocks in headers and footers
                 if element["bbox"][1] <= HEADER_FOOTER_THRESHOLD or element["bbox"][1] >= page_height - HEADER_FOOTER_THRESHOLD:
                     continue
                 text = extract_text_from_lines(element["lines"])
                 content += text
-                # cprint.black(text)
             
             elif element["type"] == 1: # image
-                # cprint.blue("Image")
                 img_count += 1
                 img_data = element["image"]
-                # cprint.black(xref)
                 img_bbox = element["bbox"]
                 img_height =  img_bbox[3] - img_bbox[1]
                 img_filename = f"page_{i+1}-image_{img_count}.png"
@@ -81,8 +70,7 @@ def extract_pdf(doc: pymupdf.Document):
                     cprint.yellow(f"ignored image {img_height} bbox: {img_bbox} ")
                     continue
 
-                # if it's an xref
-                # cprint.red("CHECK")
+                # if image is an xref
                 if isinstance(img_data, int):
                     xref = img_data
                     if xref == 0:
@@ -90,35 +78,39 @@ def extract_pdf(doc: pymupdf.Document):
                     
                     pix = extract_img_from_xref(doc, xref)
                     images[img_filename] = pix.tobytes()
+
                     pix = None
-                    cprint.yellow("XREF")
                 elif isinstance(img_data, bytes): # otherwise it's the raw data
                     images[img_filename] = img_data
-                    cprint.yellow("DATA")
                 else:
-                    cprint.red("NOT RECOGNIZED")
+                    cprint.red("Image not recognized!")
                     continue
 
-                # pix.save(f"test_images/{img_filename}")
                 content += f'<img src="test_images/{img_filename}" alt="Image {img_count} on page {i+1}" />\n'
             else:
-                cprint.red(element["type"])
-        # cprint.green(f"img count: {img_count}")
+                cprint.red(f"Error: unrecognized block type {element["type"]}")
+
+        # check if there are any missed images
         if img_count < get_images_count:
             cprint.red(f"Missed {get_images_count - img_count} images. Extracting using get_images")
             for index, img in enumerate(img_list):
                 xref = img[0]
-                image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
-                image_height = image_rects[3] - image_rects[1]
-                full_img_filename = f"page_{i+1}-full_{index}.png"
+                print(img)
 
-                if xref == 0:
-                    continue
-                # check if the img position is in the bottom 30% of the image, and ignores it
-                if (image_rects[1] > page_height * 0.7) or (image_height < 5):
-                    continue 
+                if not page.get_image_rects(xref):
+                    cprint.red("Error getting image rects. Adding without checking thresholds.")
+                else:
+                    image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
+                    image_height = image_rects[3] - image_rects[1]
+                    full_img_filename = f"page_{i+1}-full_{index}.png"
 
-                pix = extract_img_from_xref(doc, img[0])
+                    if xref == 0:
+                        continue
+                    # image thresholds
+                    if (image_rects[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (image_height < 5):
+                        continue 
+
+                pix = extract_img_from_xref(doc, xref)
                 images[full_img_filename] = pix.tobytes()
                 content += f'<img src="test_images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
@@ -126,7 +118,7 @@ def extract_pdf(doc: pymupdf.Document):
 
 doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
 # doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
-# doc = pymupdf.open("test_pdf/RascalV1.pdf")
+# doc = pymupdf.open("test_pdf/StartingOver.pdf")
 result = extract_pdf(doc)
 
 for i, (key, value) in enumerate(result[1].items()):

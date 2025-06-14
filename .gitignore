@@ -1,5 +1,6 @@
 # test files and folders
 test_*/
+test*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

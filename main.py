@@ -4,14 +4,17 @@ from ebooklib import epub
 import os
 
 os.makedirs("test_images", exist_ok=True)
+os.makedirs("test_output/test_images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 65 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% of the page
 
+# TODO use first image as cover
 def create_epub():
     pass
 
 # TODO use TOC to split chapters
-def split_to_chapters(doc, full_text):
+def split_to_chapters(doc, extracted_content):
+    full_text, images = extracted_content
     print(doc.get_toc)
     pass
 
@@ -36,11 +39,12 @@ def extract_img_from_xref(doc, xref):
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
-def extract_pdf(doc: pymupdf.Document):
+def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
+    end = doc.page_count if end == -1 else end
     content = ""
     images = {} # key: filename, value: image data
 
-    for i in range(0, doc.page_count):
+    for i in range(start, end):
         cprint.blue(f"-----PAGE {i+1}------")
         page = doc[i]
         page_height = page.rect.height
@@ -88,6 +92,7 @@ def extract_pdf(doc: pymupdf.Document):
             else:
                 cprint.red(f"Error: unrecognized block type {element["type"]}")
 
+        # check if there are any missed images
         if img_count < get_images_count:
             cprint.red(f"Missed {get_images_count - img_count} images. Extracting using get_images")
             for index, img in enumerate(img_list):
@@ -108,16 +113,25 @@ def extract_pdf(doc: pymupdf.Document):
 
     return content, images
 
-doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
-# doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
-# doc = pymupdf.open("test_pdf/RascalV1.pdf")
-result = extract_pdf(doc)
+pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
+# pdf_path = "test_pdf/Like Snow Piling.pdf"
+# pdf_path = "test_pdf/StartingOver.pdf"
+doc = pymupdf.open(pdf_path)
+pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
 
+result = extract_pdf(doc)
+# save images
 for i, (key, value) in enumerate(result[1].items()):
     print(i, key)
-    with open(f"test_images/img{i}-{key}", "wb") as f:
+    with open(f"test_output/test_images/page_{i+1}-image_{i}.png", "wb") as f: # img{i}-{key}
         f.write(value)
+
 if (input("Print result? (Y/n) ").strip() == 'Y'):
     print(f"\n\n{result[0]}")
+
+# save result html
+with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
+    f.write(result[0])
     
+cprint.cyan(f"Saved output to test_output/output-{pdf_filename}.html")
 cprint.green("Done")
