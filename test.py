@@ -2,8 +2,10 @@ import ColorPrint as cprint
 import pymupdf
 from ebooklib import epub
 import os
+import json
 
-os.makedirs("test_images", exist_ok=True)
+# os.makedirs("test_images", exist_ok=True)
+os.makedirs("test_output/test_images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 65 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% of the page
 
@@ -12,8 +14,20 @@ def create_epub():
     pass
 
 # TODO use TOC to split chapters
-def split_to_chapters(doc, full_text):
-    print(doc.get_toc)
+def split_to_chapters(doc, extracted_content):
+    full_text, images = extracted_content
+    # print(doc.get_toc()[1][2])
+    toc = doc.get_toc()
+    for i in range(len(toc)):
+        current_toc = toc[i]
+        next_toc_page = 1
+        # if current_toc[1].strip() == "":
+        #     continue
+
+        if i < len(toc)-1:
+            next_toc_page = toc[i+1][2]
+        print(f"extracting {current_toc[1]} from {current_toc[2]-1} to {next_toc_page-1}")
+        # result = extract_pdf(doc, current_toc[2] - 1, next_toc_page - 2)
     pass
 
 def extract_text_from_lines(lines):
@@ -67,7 +81,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                 img_filename = f"page_{i+1}-image_{img_count}.png"
 
                 if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_height < 5): # check if the img position is in the bottom 30% of the image, and ignores it
-                    cprint.yellow(f"ignored image {img_height} bbox: {img_bbox} ")
+                    cprint.yellow(f"ignored image {img_filename} bbox: {img_bbox} ")
                     continue
 
                 # if image is an xref
@@ -91,41 +105,51 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                 cprint.red(f"Error: unrecognized block type {element["type"]}")
 
         # check if there are any missed images
+        # TODO Check for duplicate images
         if img_count < get_images_count:
             cprint.red(f"Missed {get_images_count - img_count} images. Extracting using get_images")
             for index, img in enumerate(img_list):
                 xref = img[0]
-                print(img)
+                image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
+                image_height = image_rects[3] - image_rects[1]
+                full_img_filename = f"page_{i+1}-full_{index}.png"
 
-                if not page.get_image_rects(xref):
-                    cprint.red("Error getting image rects. Adding without checking thresholds.")
-                else:
-                    image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
-                    image_height = image_rects[3] - image_rects[1]
-                    full_img_filename = f"page_{i+1}-full_{index}.png"
+                if xref == 0:
+                    continue
+                # image thresholds
+                if (image_rects[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (image_height < 5):
+                    continue 
 
-                    if xref == 0:
-                        continue
-                    # image thresholds
-                    if (image_rects[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (image_height < 5):
-                        continue 
-
-                pix = extract_img_from_xref(doc, xref)
+                pix = extract_img_from_xref(doc, img[0])
                 images[full_img_filename] = pix.tobytes()
                 content += f'<img src="test_images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
     return content, images
 
-doc = pymupdf.open("test_pdf/Gunatsu Volume 1.pdf")
-# doc = pymupdf.open("test_pdf/Like Snow Piling.pdf")
-# doc = pymupdf.open("test_pdf/StartingOver.pdf")
-result = extract_pdf(doc)
+# pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
+# pdf_path = "test_pdf/Like Snow Piling.pdf"
+# pdf_path = "test_pdf/StartingOver.pdf"
+pdf_path = "test_pdf/RascalV1.pdf"
+doc = pymupdf.open(pdf_path)
+pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
 
-for i, (key, value) in enumerate(result[1].items()):
-    print(i, key)
-    with open(f"test_images/img{i}-{key}", "wb") as f:
-        f.write(value)
-if (input("Print result? (Y/n) ").strip() == 'Y'):
-    print(f"\n\n{result[0]}")
+split_to_chapters(doc, ("", ""))
+
+# result = extract_pdf(doc, 0, 5)
+
+# # save images
+# for i, (key, value) in enumerate(result[1].items()):
+#     # print(i, key)
+#     with open(f"test_output/test_images/{key}", "wb") as f:
+#         f.write(value)
+# cprint.cyan(f"Saved images to test_output/test_images/")
+
+# if (input("Print result? (Y/n): ").strip() == 'Y'):
+#     print(f"\n\n{result[0]}")
+
+# # save result html
+# with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
+#     f.write(result[0])
     
-cprint.green("Done")
+# cprint.cyan(f"\nSaved output to test_output/output-{pdf_filename}.html")
+# cprint.green("Done")
