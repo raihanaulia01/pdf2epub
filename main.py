@@ -171,9 +171,10 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
 
     return content, images
 
-def pdf_to_epub(doc):
+def pdf_to_epub(pdf_path):
+    doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    cprint.cyan(f"Processing {pdf_filename}")
+    cprint.cyan(f"{'-'*10}Processing {pdf_filename}{'-'*10}")
     result = extract_pdf(doc, img_prefix=pdf_filename)
 
     # save images
@@ -199,15 +200,12 @@ def pdf_to_epub(doc):
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
 # pdf_path = "test_pdf/StartingOver.pdf"
 pdf_path = "test_pdf/TomodareV1.pdf"
-doc = pymupdf.open(pdf_path)
-pdf_to_epub(doc)
+pdf_to_epub(pdf_path)
 
 pdf_path = "test_pdf/TomodareV2.pdf"
-doc = pymupdf.open(pdf_path)
-pdf_to_epub(doc)
+pdf_to_epub(pdf_path)
 
 pdf_path = "test_pdf/TomodareV3.pdf"
-doc = pymupdf.open(pdf_path)
-pdf_to_epub(doc)
+pdf_to_epub(pdf_path)
 
 cprint.green("Done")
