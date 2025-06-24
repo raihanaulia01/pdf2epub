@@ -8,21 +8,39 @@ os.makedirs("test_output/images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
 
+def debug_print(level, i, text):
+    page = i + 1
+    page_debug = f"PAGE {page:3}"
+    print_text = f"{page_debug:<9} {text}"
+    if level == "info":
+        cprint.lightgrey(print_text)
+    elif level == "error":
+        cprint.red(print_text)
+    elif level == "warning":
+        cprint.yellow(print_text)
+    # elif level == "debug":
+    #     cprint.black(print_text)
+    elif level == "success":
+        cprint.green(print_text)
+
+
 # TODO use first image as cover
 # TODO this is still copied from epubscraper
-def create_epub(chapters, output_filename, title, author):
+def create_epub(chapters, output_filename, title, author, cover_image=None):
     cprint.green("Creating EPUB...")
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
     book.set_language("en")
     book.add_author(author)
+    if cover_image:
+        book.set_cover(cover_image[0], cover_image[1])
     
     epub_chapters = []
     
-    for i, (title, content, images) in enumerate(chapters):
+    for i, (content, images) in enumerate(chapters):
         chapter = epub.EpubHtml(title=title, file_name=f'chapter_{i}.xhtml', lang='en')
-        chapter.content = f"<h1>{title}</h1>{content}"
+        chapter.content = content
         epub_chapters.append(chapter)
         book.add_item(chapter)
         
@@ -38,13 +56,17 @@ def create_epub(chapters, output_filename, title, author):
     book.add_item(epub.EpubNav())
     
     # Write the EPUB file
-    epub.write_epub(output_filename, book, {})
+    epub.write_epub(output_filename, book)
     cprint.cyan(f"\nEPUB file '{output_filename}' created successfully.\n")
 
-# TODO use TOC to split chapters
 def split_to_chapters(doc, extracted_content):
     full_text, images = extracted_content
-    print(doc.get_toc)
+    toc = doc.get_toc()
+    if not toc:
+        cprint.red("Table of contents not found. This book will not have any TOC.")
+        return [extracted_content]
+    # TODO use TOC to split chapters
+    return [extracted_content]
 
 def extract_text_from_lines(lines):
     text = ""
@@ -73,7 +95,6 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
     images = {} # key: filename, value: image data
 
     for i in range(start, end):
-        cprint.blue(f"{'-'*8}PAGE {i+1}{'-'*8}")
         page = doc[i]
         page_height = page.rect.height
         dicts = page.get_text("dict", sort=True)
@@ -98,7 +119,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
 
                 # ignores images in headers and bottom part of the page (use threshold)
                 if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_bbox[1] <= HEADER_FOOTER_THRESHOLD): 
-                    cprint.black(f"ignored image {img_filename} bbox: {img_bbox} ")
+                    debug_print("debug", i, f"ignored image {img_filename} bbox: {img_bbox}")
                     ignored_images.add(img_bbox)
                     continue
 
@@ -114,16 +135,16 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                 elif isinstance(img_data, bytes): # otherwise it's the byte data
                     images[img_filename] = img_data
                 else:
-                    cprint.red(f"Image not recognized! Img data: \n{img_data}")
+                    debug_print("error", i, f"Image not recognized! Img data: \n{img_data}")
                     continue
 
                 content += f'<img src="images/{img_filename}" alt="Image {img_count} on page {i+1}" />\n'
             else:
-                cprint.red(f"Error: unrecognized block type {element["type"]}")
+                debug_print("error", i, f"Error: unrecognized block type {element["type"]}")
 
         # check if there are any missed images
         if img_count < get_images_count:
-            cprint.red(f"Missed {get_images_count - img_count} images. Extracting and checking duplicates...")
+            debug_print("debug", i, f"Missed {get_images_count - img_count} images. Extracting and checking duplicates...")
 
             for index, img in enumerate(img_list):
                 xref = img[0]
@@ -142,34 +163,51 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
 
                 # check duplicates
                 if (image_rects in ignored_images):
-                    cprint.black("Ignoring duplicate image.")
                     continue
                 
-                cprint.cyan(f"Adding missing image: {full_img_filename}")
+                debug_print("info", i, f"Adding missing image: {full_img_filename}")
                 images[full_img_filename] = full_img_bytes
                 content += f'<img src="images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
     return content, images
+
+def pdf_to_epub(doc):
+    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+    cprint.cyan(f"Processing {pdf_filename}")
+    result = extract_pdf(doc)
+
+    # save images
+    for i, (key, value) in enumerate(result[1].items()):
+        # print(i, key)
+        with open(f"test_output/images/{key}", "wb") as f:
+            f.write(value)
+    cprint.cyan(f"Saved images to test_output/images/")
+
+    # save result html
+    with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
+        f.write(result[0])
+        
+    cprint.cyan(f"\nSaved HTML output to test_output/output-{pdf_filename}.html\n")
+
+    chapters = split_to_chapters(doc, result)
+    cover_image_name = next(iter(result[1].keys()))
+    cover_image_data = result[1][cover_image_name]
+
+    create_epub(chapters, f"test_output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
 # pdf_path = "test_pdf/StartingOver.pdf"
 pdf_path = "test_pdf/Tomodare1.pdf"
 doc = pymupdf.open(pdf_path)
-pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+pdf_to_epub(doc)
 
-result = extract_pdf(doc)
+pdf_path = "test_pdf/Tomodare2.pdf"
+doc = pymupdf.open(pdf_path)
+pdf_to_epub(doc)
 
-# save images
-for i, (key, value) in enumerate(result[1].items()):
-    # print(i, key)
-    with open(f"test_output/images/{key}", "wb") as f:
-        f.write(value)
-cprint.cyan(f"Saved images to test_output/images/")
+pdf_path = "test_pdf/Tomodare3.pdf"
+doc = pymupdf.open(pdf_path)
+pdf_to_epub(doc)
 
-# save result html
-with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
-    f.write(result[0])
-    
-cprint.cyan(f"\nSaved output to test_output/output-{pdf_filename}.html")
 cprint.green("Done")
