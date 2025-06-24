@@ -57,7 +57,7 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     
     # Write the EPUB file
     epub.write_epub(output_filename, book)
-    cprint.cyan(f"\nEPUB file '{output_filename}' created successfully.\n")
+    cprint.cyan(f"EPUB file '{output_filename}' created successfully.\n")
 
 def split_to_chapters(doc, extracted_content):
     full_text, images = extracted_content
@@ -89,7 +89,7 @@ def extract_img_from_xref(doc, xref):
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
-def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
+def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
     end = doc.page_count if end == -1 else end
     content = ""
     images = {} # key: filename, value: image data
@@ -115,7 +115,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                 img_data = element["image"]
                 img_bbox = element["bbox"]
                 # img_height =  img_bbox[3] - img_bbox[1]
-                img_filename = f"page_{i+1}-image_{img_count}.png"
+                img_filename = f"{img_prefix}-page_{i+1}-image_{img_count}.png"
 
                 # ignores images in headers and bottom part of the page (use threshold)
                 if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_bbox[1] <= HEADER_FOOTER_THRESHOLD): 
@@ -150,7 +150,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
                 xref = img[0]
                 image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
                 image_height = image_rects[3] - image_rects[1]
-                full_img_filename = f"page_{i+1}-full_{index}.png"
+                full_img_filename = f"{img_prefix}-page_{i+1}-full_{index}.png"
 
                 if xref == 0:
                     continue
@@ -174,20 +174,20 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1):
 def pdf_to_epub(doc):
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
     cprint.cyan(f"Processing {pdf_filename}")
-    result = extract_pdf(doc)
+    result = extract_pdf(doc, img_prefix=pdf_filename)
 
     # save images
     for i, (key, value) in enumerate(result[1].items()):
         # print(i, key)
         with open(f"test_output/images/{key}", "wb") as f:
             f.write(value)
-    cprint.cyan(f"Saved images to test_output/images/")
+    cprint.cyan(f"\nSaved images to test_output/images/")
 
     # save result html
     with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
         f.write(result[0])
         
-    cprint.cyan(f"\nSaved HTML output to test_output/output-{pdf_filename}.html\n")
+    cprint.cyan(f"Saved HTML output to test_output/output-{pdf_filename}.html\n")
 
     chapters = split_to_chapters(doc, result)
     cover_image_name = next(iter(result[1].keys()))
@@ -198,15 +198,15 @@ def pdf_to_epub(doc):
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
 # pdf_path = "test_pdf/StartingOver.pdf"
-pdf_path = "test_pdf/Tomodare1.pdf"
+pdf_path = "test_pdf/TomodareV1.pdf"
 doc = pymupdf.open(pdf_path)
 pdf_to_epub(doc)
 
-pdf_path = "test_pdf/Tomodare2.pdf"
+pdf_path = "test_pdf/TomodareV2.pdf"
 doc = pymupdf.open(pdf_path)
 pdf_to_epub(doc)
 
-pdf_path = "test_pdf/Tomodare3.pdf"
+pdf_path = "test_pdf/TomodareV3.pdf"
 doc = pymupdf.open(pdf_path)
 pdf_to_epub(doc)
 
