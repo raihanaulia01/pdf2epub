@@ -3,6 +3,9 @@ test_*/
 test*
 images/
 
+# generated files
+output/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

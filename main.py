@@ -4,7 +4,7 @@ from ebooklib import epub
 import os
 import hashlib
 
-os.makedirs("test_output/images", exist_ok=True)
+os.makedirs("output/images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
 
@@ -179,21 +179,21 @@ def pdf_to_epub(doc):
     # save images
     for i, (key, value) in enumerate(result[1].items()):
         # print(i, key)
-        with open(f"test_output/images/{key}", "wb") as f:
+        with open(f"output/images/{key}", "wb") as f:
             f.write(value)
-    cprint.cyan(f"\nSaved images to test_output/images/")
+    cprint.cyan(f"\nSaved images to output/images/")
 
     # save result html
-    with open(f"test_output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
+    with open(f"output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
         f.write(result[0])
         
-    cprint.cyan(f"Saved HTML output to test_output/output-{pdf_filename}.html\n")
+    cprint.cyan(f"Saved HTML output to output/output-{pdf_filename}.html\n")
 
     chapters = split_to_chapters(doc, result)
     cover_image_name = next(iter(result[1].keys()))
     cover_image_data = result[1][cover_image_name]
 
-    create_epub(chapters, f"test_output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
+    create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
