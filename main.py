@@ -68,20 +68,58 @@ def split_to_chapters(doc, extracted_content):
     # TODO use TOC to split chapters
     return [extracted_content]
 
-def extract_text_from_lines(lines):
+# def extract_text_from_lines(lines):
+#     text = ""
+#     for line in lines:
+#         line_text = ""
+#         for span in line["spans"]:
+#             span_font = span["font"].lower()
+#             if "italic" in span_font:
+#                 line_text += f"<i>{span["text"]}</i>"
+#             elif "bold" in span_font:
+#                 line_text += f"<b>{span["text"]}</b>"
+#             else: 
+#                 line_text += span["text"]
+#         text += f"<p>{line_text}</p>"
+#     return text
+
+def handle_extract_with_font(span):
+    span_font = span["font"].lower()
+    if "italic" in span_font:
+        return f"<i>{span['text']}</i>"
+    elif "bold" in span_font:
+        return f"<b>{span['text']}</b>"
+    else: 
+        return span["text"]
+
+
+def combine_extract_text_from_lines(lines):
     text = ""
-    for line in lines:
+    combined_spans = []
+    
+    for i, line in enumerate(lines):
+        # check if next line starts with lowercase
+        should_combine = False
+        if i + 1 < len(lines) and lines[i + 1]["spans"]:
+            next_first_text = lines[i + 1]["spans"][0]["text"]
+            if next_first_text.strip() and next_first_text.strip()[0].islower():
+                should_combine = True
+        
+        if should_combine:
+            combined_spans.extend(line["spans"])
+            combined_spans.append({"text": " ", "font": ""})  # add space between lines
+            continue
+
+        all_spans = combined_spans + line["spans"]
         line_text = ""
-        for span in line["spans"]:
-            span_font = span["font"].lower()
-            if "italic" in span_font:
-                line_text += f"<i>{span["text"]}</i>"
-            elif "bold" in span_font:
-                line_text += f"<b>{span["text"]}</b>"
-            else: 
-                line_text += span["text"]
+        for span in all_spans:
+            line_text += handle_extract_with_font(span)
+        
         text += f"<p>{line_text}</p>"
+        combined_spans = []
+    
     return text
+
 
 def extract_img_from_xref(doc, xref):
     pix = pymupdf.Pixmap(doc, xref)
@@ -108,7 +146,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
                 # ignore text blocks in headers and footers
                 if element["bbox"][1] <= HEADER_FOOTER_THRESHOLD or element["bbox"][1] >= page_height - HEADER_FOOTER_THRESHOLD:
                     continue
-                content += extract_text_from_lines(element["lines"])
+                content += combine_extract_text_from_lines(element["lines"])
             
             elif element["type"] == 1: # image
                 img_count += 1
@@ -174,7 +212,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
 def pdf_to_epub(pdf_path):
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    cprint.cyan(f"{'-'*10}Processing {pdf_filename}{'-'*10}")
+    cprint.green(f"{'-'*10}Processing {pdf_filename}{'-'*10}")
     result = extract_pdf(doc, img_prefix=pdf_filename)
 
     # save images
