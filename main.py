@@ -8,18 +8,22 @@ os.makedirs("output/images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
 
-def debug_print(level, i, text):
-    page = i + 1
-    page_debug = f"PAGE {page:3}"
-    print_text = f"{page_debug:<9} {text}"
+def debug_print(level, text, i=None):
+    if not i:
+        print_text = text
+    else:
+        page = i + 1
+        page_debug = f"PAGE {page:3}"
+        print_text = f"{page_debug:<9} {text}"
+
     if level == "info":
         cprint.lightgrey(print_text)
     elif level == "error":
         cprint.red(print_text)
     elif level == "warning":
         cprint.yellow(print_text)
-    # elif level == "debug":
-    #     cprint.black(print_text)
+    elif level == "debug":
+        cprint.black(print_text)
     elif level == "success":
         cprint.green(print_text)
 
@@ -27,7 +31,7 @@ def debug_print(level, i, text):
 # TODO use first image as cover
 # TODO this is still copied from epubscraper
 def create_epub(chapters, output_filename, title, author, cover_image=None):
-    cprint.green("Creating EPUB...")
+    debug_print("info", f"Creating EPUB {output_filename}")
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
@@ -57,15 +61,16 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     
     # Write the EPUB file
     epub.write_epub(output_filename, book)
-    cprint.cyan(f"EPUB file '{output_filename}' created successfully.\n")
+    debug_print("success", f"EPUB file '{output_filename}' created successfully.\n")
 
 def split_to_chapters(doc, extracted_content):
     full_text, images = extracted_content
     toc = doc.get_toc()
     if not toc:
-        cprint.red("Table of contents not found. This book will not have any TOC.")
+        debug_print("error", "Table of contents not found. This book will not have any TOC.")
         return [extracted_content]
     # TODO use TOC to split chapters
+    debug_print("debug", toc)
     return [extracted_content]
 
 # def extract_text_from_lines(lines):
@@ -157,7 +162,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
 
                 # ignores images in headers and bottom part of the page (use threshold)
                 if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_bbox[1] <= HEADER_FOOTER_THRESHOLD): 
-                    debug_print("debug", i, f"ignored image {img_filename} bbox: {img_bbox}")
+                    # debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
                     ignored_images.add(img_bbox)
                     continue
 
@@ -173,16 +178,16 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
                 elif isinstance(img_data, bytes): # otherwise it's the byte data
                     images[img_filename] = img_data
                 else:
-                    debug_print("error", i, f"Image not recognized! Img data: \n{img_data}")
+                    debug_print("error", f"Image not recognized! Img data: \n{img_data}", i=i)
                     continue
 
                 content += f'<img src="images/{img_filename}" alt="Image {img_count} on page {i+1}" />\n'
             else:
-                debug_print("error", i, f"Error: unrecognized block type {element["type"]}")
+                debug_print("error", f"Error: unrecognized block type {element["type"]}", i=i)
 
         # check if there are any missed images
         if img_count < get_images_count:
-            debug_print("debug", i, f"Missed {get_images_count - img_count} images. Extracting and checking duplicates...")
+            # debug_print("debug", f"Missed {get_images_count - img_count} images. Extracting and checking duplicates...", i=i)
 
             for index, img in enumerate(img_list):
                 xref = img[0]
@@ -203,7 +208,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
                 if (image_rects in ignored_images):
                     continue
                 
-                debug_print("info", i, f"Adding missing image: {full_img_filename}")
+                debug_print("info", f"Adding missing image: {full_img_filename}", i=i)
                 images[full_img_filename] = full_img_bytes
                 content += f'<img src="images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
@@ -237,11 +242,11 @@ def pdf_to_epub(pdf_path):
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
 # pdf_path = "test_pdf/StartingOver.pdf"
-pdf_path = "test_pdf/TomodareV1.pdf"
-pdf_to_epub(pdf_path)
+# pdf_path = "test_pdf/TomodareV1.pdf"
+# pdf_to_epub(pdf_path)
 
-pdf_path = "test_pdf/TomodareV2.pdf"
-pdf_to_epub(pdf_path)
+# pdf_path = "test_pdf/TomodareV2.pdf"
+# pdf_to_epub(pdf_path)
 
 pdf_path = "test_pdf/TomodareV3.pdf"
 pdf_to_epub(pdf_path)
