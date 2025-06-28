@@ -1,37 +1,40 @@
-import ColorPrint as cprint
 import pymupdf
 from ebooklib import epub
 import os
-import hashlib
+from rich.progress import track
+from rich import print as print
+from rich.pretty import pprint
 
 os.makedirs("output/images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
 
 def debug_print(level, text, i=None):
-    if not i:
+    if i == None:
         print_text = text
     else:
         page = i + 1
         page_debug = f"PAGE {page:3}"
-        print_text = f"{page_debug:<9} {text}"
+        print_text = f"{page_debug:<9}: {text}"
 
     if level == "info":
-        cprint.lightgrey(print_text)
+        print(f"[grey]{print_text}[/grey]")
     elif level == "error":
-        cprint.red(print_text)
+        print(f"[red]{print_text}[/red]")
     elif level == "warning":
-        cprint.yellow(print_text)
+        print(f"[yellow]{print_text}[/yellow]")
     elif level == "debug":
-        cprint.black(print_text)
+        print(f"[cyan]{print_text}[/cyan]")
     elif level == "success":
-        cprint.green(print_text)
+        print(f"[green]{print_text}[/green]")
+    elif level == "debug_data":
+        pprint(text)
 
 
 # TODO use first image as cover
 # TODO this is still copied from epubscraper
 def create_epub(chapters, output_filename, title, author, cover_image=None):
-    debug_print("info", f"Creating EPUB {output_filename}")
+    debug_print("info", f"\nCreating EPUB {output_filename}")
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
@@ -70,23 +73,8 @@ def split_to_chapters(doc, extracted_content):
         debug_print("error", "Table of contents not found. This book will not have any TOC.")
         return [extracted_content]
     # TODO use TOC to split chapters
-    debug_print("debug", toc)
+    debug_print("debug_data", toc)
     return [extracted_content]
-
-# def extract_text_from_lines(lines):
-#     text = ""
-#     for line in lines:
-#         line_text = ""
-#         for span in line["spans"]:
-#             span_font = span["font"].lower()
-#             if "italic" in span_font:
-#                 line_text += f"<i>{span["text"]}</i>"
-#             elif "bold" in span_font:
-#                 line_text += f"<b>{span["text"]}</b>"
-#             else: 
-#                 line_text += span["text"]
-#         text += f"<p>{line_text}</p>"
-#     return text
 
 def handle_extract_with_font(span):
     span_font = span["font"].lower()
@@ -137,7 +125,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
     content = ""
     images = {} # key: filename, value: image data
 
-    for i in range(start, end):
+    for i in track(range(start, end), description=f"Processing {img_prefix}"):
         page = doc[i]
         page_height = page.rect.height
         dicts = page.get_text("dict", sort=True)
@@ -217,7 +205,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
 def pdf_to_epub(pdf_path):
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    cprint.green(f"{'-'*10}Processing {pdf_filename}{'-'*10}")
+    print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
     result = extract_pdf(doc, img_prefix=pdf_filename)
 
     # save images
@@ -225,13 +213,13 @@ def pdf_to_epub(pdf_path):
         # print(i, key)
         with open(f"output/images/{key}", "wb") as f:
             f.write(value)
-    cprint.cyan(f"\nSaved images to output/images/")
+    print(f"\n[green]Saved images to output/images/[/green]")
 
     # save result html
     with open(f"output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
         f.write(result[0])
         
-    cprint.cyan(f"Saved HTML output to output/output-{pdf_filename}.html\n")
+    print(f"[green]Saved HTML output to output/output-{pdf_filename}.html[/green]\n")
 
     chapters = split_to_chapters(doc, result)
     cover_image_name = next(iter(result[1].keys()))
@@ -245,10 +233,10 @@ def pdf_to_epub(pdf_path):
 # pdf_path = "test_pdf/TomodareV1.pdf"
 # pdf_to_epub(pdf_path)
 
-# pdf_path = "test_pdf/TomodareV2.pdf"
-# pdf_to_epub(pdf_path)
-
-pdf_path = "test_pdf/TomodareV3.pdf"
+pdf_path = "test_pdf/TomodareV2.pdf"
 pdf_to_epub(pdf_path)
 
-cprint.green("Done")
+# pdf_path = "test_pdf/TomodareV3.pdf"
+# pdf_to_epub(pdf_path)
+
+print("[green]Done[/green]")
