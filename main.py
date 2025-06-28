@@ -31,8 +31,6 @@ def debug_print(level, text, i=None):
         pprint(text)
 
 
-# TODO use first image as cover
-# TODO this is still copied from epubscraper
 def create_epub(chapters, output_filename, title, author, cover_image=None):
     debug_print("info", f"\nCreating EPUB {output_filename}")
     book = epub.EpubBook()
@@ -112,7 +110,6 @@ def combine_extract_text_from_lines(lines):
         combined_spans = []
     
     return text
-
 
 def extract_img_from_xref(doc, xref):
     pix = pymupdf.Pixmap(doc, xref)
