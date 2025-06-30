@@ -8,6 +8,7 @@ from rich.pretty import pprint
 os.makedirs("output/images", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
+DEBUG_MODE = False
 
 def debug_print(level, text, i=None):
     if i == None:
@@ -19,15 +20,15 @@ def debug_print(level, text, i=None):
 
     if level == "info":
         print(f"[grey]{print_text}[/grey]")
+    elif level == "success":
+        print(f"[green]{print_text}[/green]")
     elif level == "error":
         print(f"[red]{print_text}[/red]")
     elif level == "warning":
         print(f"[yellow]{print_text}[/yellow]")
-    elif level == "debug":
+    elif level == "debug" and DEBUG_MODE:
         print(f"[cyan]{print_text}[/cyan]")
-    elif level == "success":
-        print(f"[green]{print_text}[/green]")
-    elif level == "debug_data":
+    elif level == "debug_data" and DEBUG_MODE:
         pprint(text)
 
 
@@ -38,7 +39,7 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     book.set_title(title)
     book.set_language("en")
     book.add_author(author)
-    if cover_image:
+    if cover_image[0] and cover_image[1]:
         book.set_cover(cover_image[0], cover_image[1])
     
     epub_chapters = []
@@ -64,20 +65,11 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     epub.write_epub(output_filename, book)
     debug_print("success", f"EPUB file '{output_filename}' created successfully.\n")
 
-def split_to_chapters(doc, extracted_content):
-    full_text, images = extracted_content
-    toc = doc.get_toc()
-    if not toc:
-        debug_print("error", "Table of contents not found. This book will not have any TOC.")
-        return [extracted_content]
-    
-    # TODO use TOC to split chapters
-    debug_print("debug_data", toc)
-    return [extracted_content]
-
 def handle_extract_with_font(span):
     span_font = span["font"].lower()
-    if "italic" in span_font:
+    if "italic" in span_font and "bold" in span_font:
+        return f"<b><i>{span['text']}</i></b>"
+    elif "italic" in span_font:
         return f"<i>{span['text']}</i>"
     elif "bold" in span_font:
         return f"<b>{span['text']}</b>"
@@ -120,12 +112,16 @@ def extract_img_from_xref(doc, xref):
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
-def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
+def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_progress=False):
     end = doc.page_count if end == None else end
     content = ""
     images = {} # key: filename, value: image data
 
-    for i in range(start, end):
+    page_range = range(start, end)
+    if show_progress:
+        page_range = track(page_range, description=f"Processing {img_prefix}")
+
+    for i in page_range:
         page = doc[i]
         page_height = page.rect.height
         dicts = page.get_text("dict", sort=True)
@@ -149,7 +145,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
 
                 # ignores images in headers and bottom part of the page (use threshold)
                 if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or in_header_footer(img_bbox, page_height): 
-                    # debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
+                    debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
                     ignored_images.add(img_bbox)
                     continue
 
@@ -174,8 +170,6 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
 
         # check if there are any missed images
         if img_count < get_images_count:
-            # debug_print("debug", f"Missed {get_images_count - img_count} images. Extracting and checking duplicates...", i=i)
-
             for index, img in enumerate(img_list):
                 xref = img[0]
                 image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
@@ -194,7 +188,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
                 pix = extract_img_from_xref(doc, img[0])
                 full_img_bytes = pix.tobytes()
                 
-                debug_print("info", f"Adding missing image: {full_img_filename}", i=i)
+                debug_print("info", f"Adding image {full_img_filename}", i=i)
                 images[full_img_filename] = full_img_bytes
                 content += f'<img src="images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
@@ -203,99 +197,81 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
 def extract_with_toc(doc, img_prefix):
     toc = doc.get_toc()
     chapter_list = []
-    debug_print("debug_data", toc)
 
     if not toc:
         debug_print("error", "Table of contents not found. This book will not have any TOC.")
-        content, images = extract_pdf(doc, img_prefix=img_prefix)
+        content, images = extract_pdf(doc, img_prefix=img_prefix, show_progress=True)
         return [(img_prefix, content, images)]
        
-    # if toc[0][2] > 1:
-    #     toc.insert(0, (1, "No title", 0))
+    if toc[0][2] > 1: # include the first pages that are not in the TOC
+        toc.insert(0, (1, "No title", 1))
 
-    i = 0
-    while i < len(toc):
-        toc_item = toc[i]
+    valid_toc = [item for item in toc if item[1].strip() != ""]
+    debug_print("debug_data", valid_toc)
+    for i, toc_item in enumerate(track(valid_toc, description=f"Processing chapters for {img_prefix}")):
         toc_lvl, toc_title, toc_page = toc_item
-            
-        if i != 0 and toc_title.strip() == "":
-            debug_print("debug", f"Empty toc: {toc_item}")
-            i += 1
-            continue
-
-        toc_page -= 1 # toc is 1-based. change to 0-based
-        next_toc_page = None
-
-        if i == 0 and toc_page > 0:
-            toc_page = 0
-            toc_title = "No title" if toc_title.strip() == "" else toc_title
-
-        j = i + 1
-        while j < len(toc) and toc[j][1].strip() == "":
-            j += 1
+        toc_page -= 1  # toc is 1-based. convert to 0-based
         
-        if j < len(toc):
-            next_toc_page = toc[j][2] - 1
-        else:
-            next_toc_page == None
+        next_toc_page = None
+        if i + 1 < len(valid_toc):
+            next_toc_page = valid_toc[i + 1][2] - 1
 
         toc_title = toc_title.strip()
-        debug_print("debug", f"processing chapter {toc_title} from page {toc_page + 1} to {"end" if next_toc_page == None else next_toc_page}")
         content, images = extract_pdf(doc, img_prefix=img_prefix, start=toc_page, end=next_toc_page)
         chapter_list.append((toc_title, content, images))
-        i = j
-    
+
     return chapter_list
 
-def pdf_to_epub(pdf_path):
-    doc = pymupdf.open(pdf_path)
-    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
-    result = extract_pdf(doc, img_prefix=pdf_filename)
+# def pdf_to_epub(pdf_path):
+#     doc = pymupdf.open(pdf_path)
+#     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+#     print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
+#     result = extract_pdf(doc, img_prefix=pdf_filename)
 
-    # save images
-    for i, (key, value) in enumerate(result[1].items()):
-        with open(f"output/images/{key}", "wb") as f:
-            f.write(value)
-    print(f"\n[green]Saved images to output/images/[/green]")
+#     # save images
+#     for i, (key, value) in enumerate(result[1].items()):
+#         with open(f"output/images/{key}", "wb") as f:
+#             f.write(value)
+#     print(f"\n[green]Saved images to output/images/[/green]")
 
-    # save result html
-    with open(f"output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
-        f.write(result[0])
+#     # save result html
+#     with open(f"output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
+#         f.write(result[0])
         
-    print(f"[green]Saved HTML output to output/output-{pdf_filename}.html[/green]\n")
+#     print(f"[green]Saved HTML output to output/output-{pdf_filename}.html[/green]\n")
 
-    chapters = split_to_chapters(doc, result)
-    cover_image_name = next(iter(result[1].keys()))
-    cover_image_data = result[1][cover_image_name]
+#     chapters = [("Full book", result[0], result[1])]
+#     cover_image_name = next(iter(result[1].keys()))
+#     cover_image_data = result[1][cover_image_name]
 
-    create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
+#     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
-def pdf_to_epub_test(pdf_path):
+def pdf_to_epub(pdf_path):
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
     
     print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
 
     chapters = extract_with_toc(doc, pdf_filename)
-    cover_image_name = next(iter(chapters[0][2].keys()))
-    cover_image_data = chapters[0][2][cover_image_name]
+    cover_image_name, cover_image_data = ("", "")
+    try:
+        cover_image_name = next(iter(chapters[0][2].keys()))
+        cover_image_data = chapters[0][2][cover_image_name]
+    except:
+        debug_print("warning", "\nNo cover image detected")
 
     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
-# pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
-pdf_path = "test_pdf/Like Snow Piling.pdf"
-# pdf_path = "test_pdf/What You Left Me With One Year to Live.pdf"
+pdf_list = [
+    "test_pdf/Gunatsu Volume 1.pdf",
+    "test_pdf/Like Snow Piling.pdf",
+    "test_pdf/What You Left Me With One Year to Live.pdf",
+    "test_pdf/TomodareV1.pdf",
+    "test_pdf/TomodareV2.pdf",
+    "test_pdf/TomodareV3.pdf"
+]
 
-# pdf_path = "test_pdf/TomodareV1.pdf"
-# pdf_to_epub(pdf_path)
-
-# pdf_path = "test_pdf/TomodareV2.pdf"
-# pdf_to_epub(pdf_path)
-
-# pdf_path = "test_pdf/TomodareV3.pdf"
-# pdf_to_epub(pdf_path)
-
-pdf_to_epub_test(pdf_path)
+for pdf_path in pdf_list:
+    pdf_to_epub(pdf_path)
 
 print("[green]Done[/green]")
