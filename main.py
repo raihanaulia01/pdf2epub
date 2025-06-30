@@ -43,8 +43,8 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     
     epub_chapters = []
     
-    for i, (content, images) in enumerate(chapters):
-        chapter = epub.EpubHtml(title=title, file_name=f'chapter_{i}.xhtml', lang='en')
+    for i, (chapter_title, content, images) in enumerate(chapters):
+        chapter = epub.EpubHtml(title=chapter_title, file_name=f'chapter_{i}.xhtml', lang='en')
         chapter.content = content
         epub_chapters.append(chapter)
         book.add_item(chapter)
@@ -125,7 +125,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
     content = ""
     images = {} # key: filename, value: image data
 
-    for i in track(range(start, end), description=f"Processing {img_prefix}"):
+    for i in range(start, end):
         page = doc[i]
         page_height = page.rect.height
         dicts = page.get_text("dict", sort=True)
@@ -200,6 +200,53 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
 
     return content, images
 
+def extract_with_toc(doc, img_prefix):
+    toc = doc.get_toc()
+    chapter_list = []
+    debug_print("debug_data", toc)
+
+    if not toc:
+        debug_print("error", "Table of contents not found. This book will not have any TOC.")
+        content, images = extract_pdf(doc, img_prefix=img_prefix)
+        return [(img_prefix, content, images)]
+       
+    # if toc[0][2] > 1:
+    #     toc.insert(0, (1, "No title", 0))
+
+    i = 0
+    while i < len(toc):
+        toc_item = toc[i]
+        toc_lvl, toc_title, toc_page = toc_item
+            
+        if i != 0 and toc_title.strip() == "":
+            debug_print("debug", f"Empty toc: {toc_item}")
+            i += 1
+            continue
+
+        toc_page -= 1 # toc is 1-based. change to 0-based
+        next_toc_page = None
+
+        if i == 0 and toc_page > 0:
+            toc_page = 0
+            toc_title = "No title" if toc_title.strip() == "" else toc_title
+
+        j = i + 1
+        while j < len(toc) and toc[j][1].strip() == "":
+            j += 1
+        
+        if j < len(toc):
+            next_toc_page = toc[j][2] - 1
+        else:
+            next_toc_page == None
+
+        toc_title = toc_title.strip()
+        debug_print("debug", f"processing chapter {toc_title} from page {toc_page + 1} to {"end" if next_toc_page == None else next_toc_page}")
+        content, images = extract_pdf(doc, img_prefix=img_prefix, start=toc_page, end=next_toc_page)
+        chapter_list.append((toc_title, content, images))
+        i = j
+    
+    return chapter_list
+
 def pdf_to_epub(pdf_path):
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
@@ -224,17 +271,31 @@ def pdf_to_epub(pdf_path):
 
     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
+def pdf_to_epub_test(pdf_path):
+    doc = pymupdf.open(pdf_path)
+    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+    
+    print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
+
+    chapters = extract_with_toc(doc, pdf_filename)
+    cover_image_name = next(iter(chapters[0][2].keys()))
+    cover_image_data = chapters[0][2][cover_image_name]
+
+    create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
+
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
-# pdf_path = "test_pdf/Like Snow Piling.pdf"
-# pdf_path = "test_pdf/StartingOver.pdf"
+pdf_path = "test_pdf/Like Snow Piling.pdf"
+# pdf_path = "test_pdf/What You Left Me With One Year to Live.pdf"
 
-pdf_path = "test_pdf/TomodareV1.pdf"
-pdf_to_epub(pdf_path)
+# pdf_path = "test_pdf/TomodareV1.pdf"
+# pdf_to_epub(pdf_path)
 
-pdf_path = "test_pdf/TomodareV2.pdf"
-pdf_to_epub(pdf_path)
+# pdf_path = "test_pdf/TomodareV2.pdf"
+# pdf_to_epub(pdf_path)
 
-pdf_path = "test_pdf/TomodareV3.pdf"
-pdf_to_epub(pdf_path)
+# pdf_path = "test_pdf/TomodareV3.pdf"
+# pdf_to_epub(pdf_path)
+
+pdf_to_epub_test(pdf_path)
 
 print("[green]Done[/green]")
