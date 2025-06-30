@@ -70,6 +70,7 @@ def split_to_chapters(doc, extracted_content):
     if not toc:
         debug_print("error", "Table of contents not found. This book will not have any TOC.")
         return [extracted_content]
+    
     # TODO use TOC to split chapters
     debug_print("debug_data", toc)
     return [extracted_content]
@@ -83,6 +84,8 @@ def handle_extract_with_font(span):
     else: 
         return span["text"]
 
+def in_header_footer(bbox, page_height):
+    return (bbox[1] <= HEADER_FOOTER_THRESHOLD or bbox[1] >= page_height - HEADER_FOOTER_THRESHOLD)
 
 def combine_extract_text_from_lines(lines):
     text = ""
@@ -117,8 +120,8 @@ def extract_img_from_xref(doc, xref):
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
-def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
-    end = doc.page_count if end == -1 else end
+def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix=""):
+    end = doc.page_count if end == None else end
     content = ""
     images = {} # key: filename, value: image data
 
@@ -134,7 +137,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
         for element in dicts["blocks"]:
             if element["type"] == 0: # text block
                 # ignore text blocks in headers and footers
-                if element["bbox"][1] <= HEADER_FOOTER_THRESHOLD or element["bbox"][1] >= page_height - HEADER_FOOTER_THRESHOLD:
+                if in_header_footer(element["bbox"], page_height):
                     continue
                 content += combine_extract_text_from_lines(element["lines"])
             
@@ -142,11 +145,10 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
                 img_count += 1
                 img_data = element["image"]
                 img_bbox = element["bbox"]
-                # img_height =  img_bbox[3] - img_bbox[1]
                 img_filename = f"{img_prefix}-page_{i+1}-image_{img_count}.png"
 
                 # ignores images in headers and bottom part of the page (use threshold)
-                if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (img_bbox[1] <= HEADER_FOOTER_THRESHOLD): 
+                if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or in_header_footer(img_bbox, page_height): 
                     # debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
                     ignored_images.add(img_bbox)
                     continue
@@ -185,13 +187,12 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=-1, img_prefix=""):
                 # image thresholds
                 if (image_rects[1] > page_height * IGNORE_IMAGE_THRESHOLD) or (image_height < 5):
                     continue 
-
-                pix = extract_img_from_xref(doc, img[0])
-                full_img_bytes = pix.tobytes()
-
                 # check duplicates
                 if (image_rects in ignored_images):
                     continue
+
+                pix = extract_img_from_xref(doc, img[0])
+                full_img_bytes = pix.tobytes()
                 
                 debug_print("info", f"Adding missing image: {full_img_filename}", i=i)
                 images[full_img_filename] = full_img_bytes
@@ -207,7 +208,6 @@ def pdf_to_epub(pdf_path):
 
     # save images
     for i, (key, value) in enumerate(result[1].items()):
-        # print(i, key)
         with open(f"output/images/{key}", "wb") as f:
             f.write(value)
     print(f"\n[green]Saved images to output/images/[/green]")
@@ -227,13 +227,14 @@ def pdf_to_epub(pdf_path):
 # pdf_path = "test_pdf/Gunatsu Volume 1.pdf"
 # pdf_path = "test_pdf/Like Snow Piling.pdf"
 # pdf_path = "test_pdf/StartingOver.pdf"
-# pdf_path = "test_pdf/TomodareV1.pdf"
-# pdf_to_epub(pdf_path)
+
+pdf_path = "test_pdf/TomodareV1.pdf"
+pdf_to_epub(pdf_path)
 
 pdf_path = "test_pdf/TomodareV2.pdf"
 pdf_to_epub(pdf_path)
 
-# pdf_path = "test_pdf/TomodareV3.pdf"
-# pdf_to_epub(pdf_path)
+pdf_path = "test_pdf/TomodareV3.pdf"
+pdf_to_epub(pdf_path)
 
 print("[green]Done[/green]")
