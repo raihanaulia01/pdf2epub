@@ -2,6 +2,7 @@
 test_*/
 test*
 images/
+test.py
 
 # generated files
 output/
