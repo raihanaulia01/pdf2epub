@@ -5,10 +5,12 @@ from rich.progress import track
 from rich import print as print
 from rich.pretty import pprint
 
-os.makedirs("output/images", exist_ok=True)
+os.makedirs("output/", exist_ok=True)
 HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
 IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
 DEBUG_MODE = False
+global do_save_images
+do_save_images = False
 
 def debug_print(level, text, i=None):
     if i == None:
@@ -40,6 +42,7 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     book.set_language("en")
     book.add_author(author)
     if cover_image[0] and cover_image[1]:
+        debug_print("debug", f"Adding cover image {cover_image[0]}")
         book.set_cover(cover_image[0], cover_image[1])
     
     epub_chapters = []
@@ -119,7 +122,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
 
     page_range = range(start, end)
     if show_progress:
-        page_range = track(page_range, description=f"Processing {img_prefix}")
+        page_range = track(page_range, description=f"[cyan]Processing {img_prefix}[/cyan]")
 
     for i in page_range:
         page = doc[i]
@@ -208,7 +211,7 @@ def extract_with_toc(doc, img_prefix):
 
     valid_toc = [item for item in toc if item[1].strip() != ""]
     debug_print("debug_data", valid_toc)
-    for i, toc_item in enumerate(track(valid_toc, description=f"Processing chapters for {img_prefix}")):
+    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {img_prefix}[/cyan]")):
         toc_lvl, toc_title, toc_page = toc_item
         toc_page -= 1  # toc is 1-based. convert to 0-based
         
@@ -246,11 +249,24 @@ def extract_with_toc(doc, img_prefix):
 
 #     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
+def save_images(images, path):
+    os.makedirs(f"{path}", exist_ok=True)
+    for i, (key, value) in enumerate(images.items()):
+        try:
+            with open(f"{path}/{key}", "wb") as f:
+                f.write(value)
+        except Exception as e:
+            debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
+
 def pdf_to_epub(pdf_path):
+    global do_save_images
+    if not do_save_images and input("Save images? (Y/n): ").strip() == "Y":
+        do_save_images = True
+
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
     
-    print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
+    print(f"[bold magenta]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold magenta]")
 
     chapters = extract_with_toc(doc, pdf_filename)
     cover_image_name, cover_image_data = ("", "")
@@ -260,15 +276,36 @@ def pdf_to_epub(pdf_path):
     except:
         debug_print("warning", "\nNo cover image detected")
 
+    if do_save_images:
+        all_images = {}
+        for chapter in chapters:
+            all_images.update(chapter[2])
+
+        if DEBUG_MODE:
+            for i, (key, value) in enumerate(all_images.items()):
+                debug_print("debug", f"IMAGE {i} {key}")
+
+        save_images(all_images, f"output/images_{pdf_filename}")
+        debug_print("success", f"Saved images to output/images_{pdf_filename}")
+
     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
-pdf_list = [
+test_pdf_list = [
     "test_pdf/Gunatsu Volume 1.pdf",
     "test_pdf/Like Snow Piling.pdf",
     "test_pdf/What You Left Me With One Year to Live.pdf",
     "test_pdf/TomodareV1.pdf",
     "test_pdf/TomodareV2.pdf",
-    "test_pdf/TomodareV3.pdf"
+    "test_pdf/TomodareV3.pdf",
+    "test_pdf/Kano Dere Volume 1.pdf"
+]
+
+pdf_list = [
+    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 1.pdf",
+    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 2.pdf",
+    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 3.pdf",
+    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 4.pdf",
+    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 5.pdf",
 ]
 
 for pdf_path in pdf_list:
