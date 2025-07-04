@@ -4,15 +4,44 @@ import os
 from rich.progress import track
 from rich import print as print
 from rich.pretty import pprint
+import click
 
-os.makedirs("output/", exist_ok=True)
-HEADER_FOOTER_THRESHOLD = 70 # threshold for the text extraction. may need to change for every document
-IGNORE_IMAGE_THRESHOLD = 0.7 # only extract images in this top % of the page. for example 0.7 ignores the bottom 30% (0.3) of the page
+HEADER_FOOTER_THRESHOLD = 60
+IGNORE_IMAGE_THRESHOLD = 0.7
 DEBUG_MODE = False
-global do_save_images
-do_save_images = False
+DO_SAVE_IMG = False
+
+@click.command()
+@click.option("--input", "-i", required=True, help="Input PDF file or folder path")
+@click.option("--output", "-o", default="output/", help="Output directory (default to output/)")
+@click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
+@click.option("--header-threshold", default=60, help="Header/footer threshold for text extraction. default is 60")
+@click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+
+# TODO edge case where the sentence is split into two pages. e.g. "test \pagebreak sentence". this won't combine properly using the current method
+def main(input, output, save_images, header_threshold, img_threshold, debug):
+    global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
+    
+    HEADER_FOOTER_THRESHOLD = header_threshold
+    IGNORE_IMAGE_THRESHOLD = img_threshold
+    DEBUG_MODE = debug
+    DO_SAVE_IMG = save_images
+    
+    os.makedirs(output, exist_ok=True)
+
+    if os.path.isfile(input):
+        pdf_to_epub(input, output)
+    elif os.path.isdir(input):
+        for filename in os.listdir(input):
+            if filename.lower().endswith('.pdf'):
+                pdf_path = os.path.join(input, filename)
+                pdf_to_epub(pdf_path, output)
+    else:
+        click.echo("Error: {input} is not a valid file or directory", err=True)
 
 def debug_print(level, text, i=None):
+    global DEBUG_MODE
     if i == None:
         print_text = text
     else:
@@ -175,7 +204,12 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
         if img_count < get_images_count:
             for index, img in enumerate(img_list):
                 xref = img[0]
-                image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
+                # debug_print("debug_data", page.get_image_rects(xref))
+                try:
+                    image_rects = page.get_image_rects(xref)[0] # this returns (x0, y0, x1, y1)
+                except IndexError:
+                    debug_print("error", f"Image with xref {xref} in page {i+1} doesn't exist")
+                    continue
                 image_height = image_rects[3] - image_rects[1]
                 full_img_filename = f"{img_prefix}-page_{i+1}-full_{index}.png"
 
@@ -258,10 +292,8 @@ def save_images(images, path):
         except Exception as e:
             debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
 
-def pdf_to_epub(pdf_path):
-    global do_save_images
-    if not do_save_images and input("Save images? (Y/n): ").strip() == "Y":
-        do_save_images = True
+def pdf_to_epub(pdf_path, output):
+    global DO_SAVE_IMG, DEBUG_MODE
 
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
@@ -276,7 +308,7 @@ def pdf_to_epub(pdf_path):
     except:
         debug_print("warning", "\nNo cover image detected")
 
-    if do_save_images:
+    if DO_SAVE_IMG:
         all_images = {}
         for chapter in chapters:
             all_images.update(chapter[2])
@@ -285,10 +317,10 @@ def pdf_to_epub(pdf_path):
             for i, (key, value) in enumerate(all_images.items()):
                 debug_print("debug", f"IMAGE {i} {key}")
 
-        save_images(all_images, f"output/images_{pdf_filename}")
-        debug_print("success", f"Saved images to output/images_{pdf_filename}")
+        save_images(all_images, f"{output}/images_{pdf_filename}")
+        debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
 
-    create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
+    create_epub(chapters, f"{output}/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
 test_pdf_list = [
     "test_pdf/Gunatsu Volume 1.pdf",
@@ -308,7 +340,10 @@ pdf_list = [
     "D:/Light Novel/Nemotsuki/Nemotsuki Volume 5.pdf",
 ]
 
-for pdf_path in pdf_list:
-    pdf_to_epub(pdf_path)
+# for pdf_path in test_pdf_list:
+#     pdf_to_epub(pdf_path)
+
+if __name__ == "__main__":
+    main()
 
 print("[green]Done[/green]")
