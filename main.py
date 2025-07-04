@@ -42,7 +42,7 @@ def main(input, output, save_images, header_threshold, img_threshold, debug):
                 filetype_error = False
                 pdf_to_epub(pdf_path, output)
     else:
-        debug_print("error", "Error: {input} is not a valid file or directory")
+        debug_print("error", f"Error: {input} is not a valid file or directory")
     
     if filetype_error:
         debug_print("error", f"Error: {input} is not or has no PDF.")
@@ -57,15 +57,15 @@ def debug_print(level, text, i=None):
         print_text = f"{page_debug:<9}: {text}"
 
     if level == "info":
-        print(f"[grey]{print_text}[/grey]")
+        print(f"[dim white]{print_text}[/dim white]")
     elif level == "success":
-        print(f"[green]{print_text}[/green]")
+        print(f"[bold green]{print_text}[/bold green]")
     elif level == "error":
-        print(f"[red]{print_text}[/red]")
+        print(f"[bold bright_red]{print_text}[/bold bright_red]")
     elif level == "warning":
-        print(f"[yellow]{print_text}[/yellow]")
+        print(f"[bold yellow]{print_text}[/bold yellow]")
     elif level == "debug" and DEBUG_MODE:
-        print(f"[cyan]{print_text}[/cyan]")
+        print(f"[dim cyan]{print_text}[/dim cyan]")
     elif level == "debug_data" and DEBUG_MODE:
         pprint(text)
 
@@ -248,7 +248,7 @@ def extract_with_toc(doc, img_prefix):
     chapter_list = []
 
     if not toc:
-        debug_print("error", "Table of contents not found. This book will not have any TOC.")
+        debug_print("warning", "Table of contents not found. This book will not have any TOC.")
         content, images = extract_pdf(doc, img_prefix=img_prefix, show_progress=True)
         return [(img_prefix, content, images)]
        
@@ -286,7 +286,7 @@ def pdf_to_epub(pdf_path, output):
     doc = pymupdf.open(pdf_path)
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
     
-    print(f"[bold magenta]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold magenta]")
+    print(f"[bold white]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold white]")
 
     chapters = extract_with_toc(doc, pdf_filename)
     cover_image_name, cover_image_data = ("", "")
