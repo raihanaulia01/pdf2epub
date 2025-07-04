@@ -19,7 +19,7 @@ DO_SAVE_IMG = False
 @click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
-# TODO edge case where the sentence is split into two pages. e.g. "test \pagebreak sentence". this won't combine properly using the current method
+# TODO edge case where the sentence is split into two pages. e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
 def main(input, output, save_images, header_threshold, img_threshold, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
     
@@ -29,16 +29,23 @@ def main(input, output, save_images, header_threshold, img_threshold, debug):
     DO_SAVE_IMG = save_images
     
     os.makedirs(output, exist_ok=True)
+    filetype_error = True
 
     if os.path.isfile(input):
-        pdf_to_epub(input, output)
+        if input.lower().endswith(".pdf"):
+            pdf_to_epub(input, output)
+            filetype_error = False
     elif os.path.isdir(input):
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
                 pdf_path = os.path.join(input, filename)
+                filetype_error = False
                 pdf_to_epub(pdf_path, output)
     else:
-        click.echo("Error: {input} is not a valid file or directory", err=True)
+        debug_print("error", "Error: {input} is not a valid file or directory")
+    
+    if filetype_error:
+        debug_print("error", f"Error: {input} is not or has no PDF.")
 
 def debug_print(level, text, i=None):
     global DEBUG_MODE
@@ -86,7 +93,12 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
         for img_name, img_data in images.items():
             img_item = epub.EpubItem(uid=img_name, file_name=f'images/{img_name}', media_type='image/jpeg', content=img_data)
             book.add_item(img_item)
-    
+
+    if not epub_chapters:
+        dummy_chapter = epub.EpubHtml(title="Content", file_name='chapter_0.xhtml', lang='en')
+        dummy_chapter.content = "<p>No content could be extracted from this PDF.</p>"
+        epub_chapters.append(dummy_chapter)
+
     # Define the book spine and TOC
     book.toc = epub_chapters
     book.spine = ['nav'] + epub_chapters
@@ -136,7 +148,7 @@ def combine_extract_text_from_lines(lines):
         text += f"<p>{line_text}</p>"
         combined_spans = []
     
-    return text
+    return text if text.strip() else "<p> </p>"
 
 def extract_img_from_xref(doc, xref):
     pix = pymupdf.Pixmap(doc, xref)
@@ -148,7 +160,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
     end = doc.page_count if end == None else end
     content = ""
     images = {} # key: filename, value: image data
-
+    debug_print("debug", f"extracting pdf {img_prefix} from {start} to {end}")
     page_range = range(start, end)
     if show_progress:
         page_range = track(page_range, description=f"[cyan]Processing {img_prefix}[/cyan]")
@@ -244,6 +256,7 @@ def extract_with_toc(doc, img_prefix):
         toc.insert(0, (1, "No title", 1))
 
     valid_toc = [item for item in toc if item[1].strip() != ""]
+    valid_toc.sort(key=lambda x: x[2]) # sort toc based on the page
     debug_print("debug_data", valid_toc)
     for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {img_prefix}[/cyan]")):
         toc_lvl, toc_title, toc_page = toc_item
@@ -252,36 +265,11 @@ def extract_with_toc(doc, img_prefix):
         next_toc_page = None
         if i + 1 < len(valid_toc):
             next_toc_page = valid_toc[i + 1][2] - 1
-
         toc_title = toc_title.strip()
         content, images = extract_pdf(doc, img_prefix=img_prefix, start=toc_page, end=next_toc_page)
         chapter_list.append((toc_title, content, images))
 
     return chapter_list
-
-# def pdf_to_epub(pdf_path):
-#     doc = pymupdf.open(pdf_path)
-#     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-#     print(f"[bold green]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold green]")
-#     result = extract_pdf(doc, img_prefix=pdf_filename)
-
-#     # save images
-#     for i, (key, value) in enumerate(result[1].items()):
-#         with open(f"output/images/{key}", "wb") as f:
-#             f.write(value)
-#     print(f"\n[green]Saved images to output/images/[/green]")
-
-#     # save result html
-#     with open(f"output/output-{pdf_filename}.html", "w", encoding="utf-8") as f:
-#         f.write(result[0])
-        
-#     print(f"[green]Saved HTML output to output/output-{pdf_filename}.html[/green]\n")
-
-#     chapters = [("Full book", result[0], result[1])]
-#     cover_image_name = next(iter(result[1].keys()))
-#     cover_image_data = result[1][cover_image_name]
-
-#     create_epub(chapters, f"output/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
 
 def save_images(images, path):
     os.makedirs(f"{path}", exist_ok=True)
@@ -321,27 +309,6 @@ def pdf_to_epub(pdf_path, output):
         debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
 
     create_epub(chapters, f"{output}/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
-
-test_pdf_list = [
-    "test_pdf/Gunatsu Volume 1.pdf",
-    "test_pdf/Like Snow Piling.pdf",
-    "test_pdf/What You Left Me With One Year to Live.pdf",
-    "test_pdf/TomodareV1.pdf",
-    "test_pdf/TomodareV2.pdf",
-    "test_pdf/TomodareV3.pdf",
-    "test_pdf/Kano Dere Volume 1.pdf"
-]
-
-pdf_list = [
-    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 1.pdf",
-    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 2.pdf",
-    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 3.pdf",
-    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 4.pdf",
-    "D:/Light Novel/Nemotsuki/Nemotsuki Volume 5.pdf",
-]
-
-# for pdf_path in test_pdf_list:
-#     pdf_to_epub(pdf_path)
 
 if __name__ == "__main__":
     main()
