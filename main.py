@@ -9,6 +9,7 @@ import click
 import re
 import inspect
 import datetime
+from time import time as curr_time
 
 HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
@@ -29,7 +30,7 @@ console = Console()
 # TODO edge case where the sentence is split into two pages. 
 #   e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
-# TODO change image prefix to something more reasonable. Currently doesn't work well with long file names.
+
 def main(input, output, save_images, header_threshold, img_threshold, img_prefix, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
     
@@ -38,15 +39,16 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
     DEBUG_MODE = debug
     DO_SAVE_IMG = save_images
     
+    time_start = curr_time()
     os.makedirs(output, exist_ok=True)
     filetype_error = True
+    pdf_counter = 1
 
     if os.path.isfile(input):
         if input.lower().endswith(".pdf"):
             pdf_to_epub(input, output, img_prefix=img_prefix)
             filetype_error = False
     elif os.path.isdir(input):
-        pdf_counter = 1
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
                 filetype_error = False
@@ -59,6 +61,11 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
     
     if filetype_error:
         debug_print("error", f"Error: {input} is not or has no PDF.")
+        return
+    
+    time_end = curr_time()
+    console.print('')
+    debug_print("success", f"Finished converting {pdf_counter} PDFs in {round((time_end - time_start), 3)} seconds")
 
 def debug_print(level, text, i=None):
     global DEBUG_MODE
@@ -96,7 +103,8 @@ def debug_print(level, text, i=None):
 
 
 def create_epub(chapters, output_filename, title, author, cover_image=None):
-    debug_print("info", f"\nCreating EPUB {output_filename}")
+    console.print('')
+    debug_print("info", f"Creating EPUB {output_filename}")
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
@@ -364,7 +372,7 @@ def pdf_to_epub(pdf_path, output, img_prefix=""):
         cover_image_name = next(iter(chapters[0][2].keys()))
         cover_image_data = chapters[0][2][cover_image_name]
     except:
-        debug_print("warning", "\nNo cover image detected")
+        debug_print("warning", "No cover image detected")
 
     if DO_SAVE_IMG:
         all_images = {}
