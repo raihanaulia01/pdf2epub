@@ -6,6 +6,8 @@ from rich import print as print
 from rich.pretty import pprint
 import click
 import re
+import inspect
+import datetime
 
 HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
@@ -56,6 +58,8 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
 
 def debug_print(level, text, i=None):
     global DEBUG_MODE
+    level = level.lower()
+
     if i == None:
         print_text = text
     else:
@@ -63,16 +67,21 @@ def debug_print(level, text, i=None):
         page_debug = f"PAGE {page:3}"
         print_text = f"{page_debug:<9}: {text}"
 
+    context = ""
+    if DEBUG_MODE:
+        context = inspect.currentframe().f_back.f_code.co_name
+        context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [bold white]{level.upper():<9}[/bold white] | [bright_blue]{context}[/bright_blue] - "
+
     if level == "info":
-        print(f"[dim white]{print_text}[/dim white]")
+        print(f"{context}[white]{print_text}[/white]")
     elif level == "success":
-        print(f"[bold green]{print_text}[/bold green]")
+        print(f"{context}[bold green]{print_text}[/bold green]")
     elif level == "error":
-        print(f"[bold bright_red]{print_text}[/bold bright_red]")
+        print(f"{context}[bold bright_red]{print_text}[/bold bright_red]")
     elif level == "warning":
-        print(f"[bold yellow]{print_text}[/bold yellow]")
+        print(f"{context}[bold yellow]{print_text}[/bold yellow]")
     elif level == "debug" and DEBUG_MODE:
-        print(f"[dim cyan]{print_text}[/dim cyan]")
+        print(f"{context}[cyan]{print_text}[/cyan]")
     elif level == "debug_data" and DEBUG_MODE:
         pprint(text)
 
@@ -82,10 +91,10 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
-    debug_print("info", f"Set title to \"{title}\"")
+    debug_print("info", f"Set title to [cyan]\"{title}\"[/cyan]")
     book.set_language("en")
     book.add_author(author)
-    debug_print("info", f"Set author to \"{author}\"" if author else "Author not detected in metadata")
+    debug_print("info", f"Set author to \"{author}\"") if author else debug_print("warning", "Author not detected in metadata")
 
     if cover_image[0] and cover_image[1]:
         debug_print("debug", f"Adding cover image {cover_image[0]}")
