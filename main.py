@@ -19,7 +19,9 @@ DO_SAVE_IMG = False
 @click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
-# TODO edge case where the sentence is split into two pages. e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
+# TODO edge case where the sentence is split into two pages. 
+#   e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
+#   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
 def main(input, output, save_images, header_threshold, img_threshold, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
     
@@ -123,6 +125,19 @@ def handle_extract_with_font(span):
 def in_header_footer(bbox, page_height):
     return (bbox[1] <= HEADER_FOOTER_THRESHOLD or bbox[1] >= page_height - HEADER_FOOTER_THRESHOLD)
 
+def takes_full_page(bbox, page_rect):
+    page_width = page_rect.width
+    page_height = page_rect.height
+    
+    img_width = bbox[2] - bbox[0]
+    img_height = bbox[3] - bbox[1]
+    
+    width_ratio = img_width / page_width
+    height_ratio = img_height / page_height
+    area_ratio = (img_width * img_height) / (page_width * page_height)
+
+    return area_ratio >= 0.7 or (width_ratio >= 0.8 and height_ratio >= 0.8)
+
 def combine_extract_text_from_lines(lines):
     text = ""
     combined_spans = []
@@ -188,7 +203,8 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
                 img_filename = f"{img_prefix}-page_{i+1}-image_{img_count}.png"
 
                 # ignores images in headers and bottom part of the page (use threshold)
-                if (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or in_header_footer(img_bbox, page_height): 
+                if not takes_full_page(img_bbox, page.rect) and (
+                    (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or in_header_footer(img_bbox, page_height)): 
                     debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
                     ignored_images.add(img_bbox)
                     continue
