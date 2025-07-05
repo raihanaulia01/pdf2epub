@@ -42,6 +42,10 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     
     time_start = curr_time()
     os.makedirs(output, exist_ok=True)
+    input = os.path.normpath(input)
+    output = os.path.normpath(output)
+    debug_print("debug", f"Input  : {input}")
+    debug_print("debug", f"Output : {output}")
     filetype_error = True
     pdf_counter = 0
 
@@ -317,8 +321,6 @@ def extract_with_toc(doc, img_prefix):
     chapter_list = []
     img_prefix = sanitize_filename(img_prefix)
     
-    doc_title = doc.metadata.get("title") if doc.metadata.get("title").strip() != "" else img_prefix
-
     if not toc:
         debug_print("warning", "Table of contents not found. This book will not have any TOC.")
         content, images = extract_pdf(doc, img_prefix=img_prefix, show_progress=True)
@@ -353,10 +355,11 @@ def save_images(images, path):
                 with open(f"{path}/{key}", "wb") as f:
                     f.write(value)
             except Exception as e:
-                debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
+                debug_print("error", f"Error saving image {i} at {path}\\{key}. Full error below.\n{e}")
 
 def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
     global DO_SAVE_IMG, DEBUG_MODE
+
     try:
         doc = pymupdf.open(pdf_path)
     except Exception as e:
@@ -364,7 +367,7 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
     
     console.print()
-    console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white"))
+    console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white", align="left"))
     console.print()
     chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
 
@@ -379,11 +382,12 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
         all_images = {}
         for chapter in chapters:
             all_images.update(chapter[2])
+        img_output_dir = os.path.normpath(f"{output}\\images_{pdf_filename}")
+        save_images(all_images, img_output_dir)
+        debug_print("success", f"Saved images to {img_output_dir}")
 
-        save_images(all_images, f"{output}/images_{pdf_filename}")
-        debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
-
-    with console.status(f"Creating EPUB {output}/{pdf_filename}.epub..."):
+    output_epub = os.path.normpath(f"{output}\\{pdf_filename}.epub")
+    with console.status(f"Creating EPUB {output_epub}..."):
         doc_author = author if author else doc.metadata.get("author", "")
         debug_print("debug", f"Arg author: {author} Detected author: {doc.metadata.get("author", "")}")
         doc_title = doc.metadata.get("title", "").strip()
@@ -391,9 +395,9 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
             doc_title = pdf_filename
 
         try:
-            create_epub(chapters, f"{output}/{pdf_filename}.epub", doc_title, doc_author, (cover_image_name, cover_image_data))
+            create_epub(chapters, output_epub, doc_title, doc_author, (cover_image_name, cover_image_data))
         except Exception as e:
-            debug_print("error", f"Failed to create EPUB {output}/{pdf_filename}.epub:\n{e}")
+            debug_print("error", f"Failed to create EPUB {output_epub}:\n{e}")
 
 if __name__ == "__main__":
     main()
