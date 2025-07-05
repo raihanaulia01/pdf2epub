@@ -5,6 +5,7 @@ from rich.progress import track
 from rich import print as print
 from rich.pretty import pprint
 import click
+import re
 
 HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
@@ -17,12 +18,14 @@ DO_SAVE_IMG = False
 @click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
 @click.option("--header-threshold", default=60, help="Header/footer threshold for text extraction. default is 60")
 @click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
+@click.option("--img-prefix", default="", help="Image prefix. Will be used to name the extracted images")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
 # TODO edge case where the sentence is split into two pages. 
 #   e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
-def main(input, output, save_images, header_threshold, img_threshold, debug):
+# TODO change image prefix to something more reasonable. Currently doesn't work well with long file names.
+def main(input, output, save_images, header_threshold, img_threshold, img_prefix, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
     
     HEADER_FOOTER_THRESHOLD = header_threshold
@@ -35,14 +38,16 @@ def main(input, output, save_images, header_threshold, img_threshold, debug):
 
     if os.path.isfile(input):
         if input.lower().endswith(".pdf"):
-            pdf_to_epub(input, output)
+            pdf_to_epub(input, output, img_prefix=img_prefix)
             filetype_error = False
     elif os.path.isdir(input):
+        pdf_counter = 1
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
-                pdf_path = os.path.join(input, filename)
                 filetype_error = False
-                pdf_to_epub(pdf_path, output)
+                pdf_path = os.path.join(input, filename)
+                pdf_to_epub(pdf_path, output, img_prefix=f"{img_prefix}_{pdf_counter}" if img_prefix else "")
+                pdf_counter += 1
     else:
         debug_print("error", f"Error: {input} is not a valid file or directory")
     
@@ -171,14 +176,28 @@ def extract_img_from_xref(doc, xref):
         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
     return pix
 
+def sanitize_filename(filename, max_len=40):
+    filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
+    filename = re.sub(r'\s+', '_', filename.strip())
+    if len(filename) > max_len:
+        filename = filename[:max_len]
+    return filename
+
+def truncate_string(text, max_len):
+    if len(text) > max_len:
+        return f"{text[:max_len]}..."
+    return text
+
 def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_progress=False):
     end = doc.page_count if end == None else end
     content = ""
     images = {} # key: filename, value: image data
-    debug_print("debug", f"extracting pdf {img_prefix} from {start} to {end}")
+    doc_title = doc.metadata.get("title") if doc.metadata.get("title").strip() != "" else img_prefix
     page_range = range(start, end)
+    debug_print("debug", f"extracting pdf {doc_title} from {start} to {end}")
+
     if show_progress:
-        page_range = track(page_range, description=f"[cyan]Processing {img_prefix}[/cyan]")
+        page_range = track(page_range, description=f"[cyan]Processing {doc_title}[/cyan]")
 
     for i in page_range:
         page = doc[i]
@@ -240,6 +259,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
                     continue
                 image_height = image_rects[3] - image_rects[1]
                 full_img_filename = f"{img_prefix}-page_{i+1}-full_{index}.png"
+                debug_print("debug", f"FULL_IMG | {full_img_filename}")
 
                 if xref == 0:
                     continue
@@ -262,6 +282,9 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
 def extract_with_toc(doc, img_prefix):
     toc = doc.get_toc()
     chapter_list = []
+    img_prefix = sanitize_filename(img_prefix)
+    
+    doc_title = doc.metadata.get("title") if doc.metadata.get("title").strip() != "" else img_prefix
 
     if not toc:
         debug_print("warning", "Table of contents not found. This book will not have any TOC.")
@@ -274,7 +297,7 @@ def extract_with_toc(doc, img_prefix):
     valid_toc = [item for item in toc if item[1].strip() != ""]
     valid_toc.sort(key=lambda x: x[2]) # sort toc based on the page
     debug_print("debug_data", valid_toc)
-    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {img_prefix}[/cyan]")):
+    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {truncate_string(doc_title, 67)}[/cyan]")):
         toc_lvl, toc_title, toc_page = toc_item
         toc_page -= 1  # toc is 1-based. convert to 0-based
         
@@ -289,22 +312,25 @@ def extract_with_toc(doc, img_prefix):
 
 def save_images(images, path):
     os.makedirs(f"{path}", exist_ok=True)
+    debug_print("debug", f"Created folder {path} to save images")
     for i, (key, value) in enumerate(images.items()):
         try:
             with open(f"{path}/{key}", "wb") as f:
+                debug_print("debug", f"Saving image {key}")
                 f.write(value)
         except Exception as e:
             debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
 
-def pdf_to_epub(pdf_path, output):
+def pdf_to_epub(pdf_path, output, img_prefix=""):
     global DO_SAVE_IMG, DEBUG_MODE
 
     doc = pymupdf.open(pdf_path)
-    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
     
     print(f"[bold white]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold white]")
 
-    chapters = extract_with_toc(doc, pdf_filename)
+    chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
+
     cover_image_name, cover_image_data = ("", "")
     try:
         cover_image_name = next(iter(chapters[0][2].keys()))
@@ -316,10 +342,6 @@ def pdf_to_epub(pdf_path, output):
         all_images = {}
         for chapter in chapters:
             all_images.update(chapter[2])
-
-        if DEBUG_MODE:
-            for i, (key, value) in enumerate(all_images.items()):
-                debug_print("debug", f"IMAGE {i} {key}")
 
         save_images(all_images, f"{output}/images_{pdf_filename}")
         debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
