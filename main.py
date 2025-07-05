@@ -59,6 +59,13 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
 def debug_print(level, text, i=None):
     global DEBUG_MODE
     level = level.lower()
+    level_color = {
+        "info": "white",
+        "debug": "cyan",
+        "success": "bold green",
+        "warning": "bold yellow",
+        "error": "bold bright_red",
+    }
 
     if i == None:
         print_text = text
@@ -70,20 +77,18 @@ def debug_print(level, text, i=None):
     context = ""
     if DEBUG_MODE:
         context = inspect.currentframe().f_back.f_code.co_name
-        context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [bold white]{level.upper():<9}[/bold white] | [bright_blue]{context}[/bright_blue] - "
+        if level in ("success", "warning", "error"):
+            context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [{level_color[level]}]{level.upper():<9}[/{level_color[level]}] | [bright_blue]{context}[/bright_blue] - "
+        else: 
+            context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [bold white]{level.upper():<9}[/bold white] | [bright_blue]{context}[/bright_blue] - "
 
-    if level == "info":
-        print(f"{context}[white]{print_text}[/white]")
-    elif level == "success":
-        print(f"{context}[bold green]{print_text}[/bold green]")
-    elif level == "error":
-        print(f"{context}[bold bright_red]{print_text}[/bold bright_red]")
-    elif level == "warning":
-        print(f"{context}[bold yellow]{print_text}[/bold yellow]")
-    elif level == "debug" and DEBUG_MODE:
-        print(f"{context}[cyan]{print_text}[/cyan]")
-    elif level == "debug_data" and DEBUG_MODE:
-        pprint(text)
+    if level in level_color and level not in ("debug", "debug_data"):
+        print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+    elif DEBUG_MODE:
+        if level == "debug":
+            print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+        elif level == "debug_data":
+            pprint(text)
 
 
 def create_epub(chapters, output_filename, title, author, cover_image=None):
