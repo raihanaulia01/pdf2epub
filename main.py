@@ -82,8 +82,11 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
+    debug_print("info", f"Set title to \"{title}\"")
     book.set_language("en")
     book.add_author(author)
+    debug_print("info", f"Set author to \"{author}\"" if author else "Author not detected in metadata")
+
     if cover_image[0] and cover_image[1]:
         debug_print("debug", f"Adding cover image {cover_image[0]}")
         book.set_cover(cover_image[0], cover_image[1])
@@ -346,7 +349,9 @@ def pdf_to_epub(pdf_path, output, img_prefix=""):
         save_images(all_images, f"{output}/images_{pdf_filename}")
         debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
 
-    create_epub(chapters, f"{output}/{pdf_filename}.epub", pdf_filename, "", (cover_image_name, cover_image_data))
+    doc_author = doc.metadata.get("author", "")
+    doc_title = doc.metadata.get("title", pdf_filename)
+    create_epub(chapters, f"{output}/{pdf_filename}.epub", doc_title, doc_author, (cover_image_name, cover_image_data))
 
 if __name__ == "__main__":
     main()
