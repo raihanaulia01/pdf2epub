@@ -3,7 +3,8 @@ from ebooklib import epub
 import os
 from rich.progress import track
 from rich import print as print
-from rich.pretty import pprint
+from rich.console import Console
+from rich.rule import Rule
 import click
 import re
 import inspect
@@ -13,6 +14,8 @@ HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
 DEBUG_MODE = False
 DO_SAVE_IMG = False
+
+console = Console()
 
 @click.command()
 @click.option("--input", "-i", required=True, help="Input PDF file or folder path")
@@ -52,6 +55,7 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
                 pdf_counter += 1
     else:
         debug_print("error", f"Error: {input} is not a valid file or directory")
+        return
     
     if filetype_error:
         debug_print("error", f"Error: {input} is not or has no PDF.")
@@ -83,12 +87,12 @@ def debug_print(level, text, i=None):
             context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [bold white]{level.upper():<9}[/bold white] | [bright_blue]{context}[/bright_blue] - "
 
     if level in level_color and level not in ("debug", "debug_data"):
-        print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
-    elif DEBUG_MODE:
+        console.print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+    if DEBUG_MODE:
         if level == "debug":
-            print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+            console.print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
         elif level == "debug_data":
-            pprint(text)
+            console.print(text)
 
 
 def create_epub(chapters, output_filename, title, author, cover_image=None):
@@ -99,7 +103,7 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     debug_print("info", f"Set title to [cyan]\"{title}\"[/cyan]")
     book.set_language("en")
     book.add_author(author)
-    debug_print("info", f"Set author to \"{author}\"") if author else debug_print("warning", "Author not detected in metadata")
+    debug_print("info", f"Set author to [cyan]\"{author}\"[/cyan]") if author else debug_print("warning", "Author not detected in metadata")
 
     if cover_image[0] and cover_image[1]:
         debug_print("debug", f"Adding cover image {cover_image[0]}")
@@ -188,10 +192,13 @@ def combine_extract_text_from_lines(lines):
     return text if text.strip() else "<p> </p>"
 
 def extract_img_from_xref(doc, xref):
-    pix = pymupdf.Pixmap(doc, xref)
-    if pix.n - pix.alpha > 3: # CMYK: convert to RGB first
-        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
-    return pix
+    try:
+        pix = pymupdf.Pixmap(doc, xref)
+        if pix.n - pix.alpha > 3: # CMYK: convert to RGB first
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+        return pix
+    except Exception as e:
+        debug_print("error", f"Failed to extract image xref={xref}:\n{e}")
 
 def sanitize_filename(filename, max_len=40):
     filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
@@ -214,7 +221,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
     debug_print("debug", f"extracting pdf {doc_title} from {start} to {end}")
 
     if show_progress:
-        page_range = track(page_range, description=f"[cyan]Processing {doc_title}[/cyan]")
+        page_range = track(page_range, description=f"[cyan]Processing {doc_title}[/cyan]", console=console)
 
     for i in page_range:
         page = doc[i]
@@ -290,7 +297,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
                 pix = extract_img_from_xref(doc, img[0])
                 full_img_bytes = pix.tobytes()
                 
-                debug_print("info", f"Adding image {full_img_filename}", i=i)
+                debug_print("debug", f"Adding image {full_img_filename}", i=i)
                 images[full_img_filename] = full_img_bytes
                 content += f'<img src="images/{full_img_filename}" alt="Full Image {index} on page {i+1}" />\n'
 
@@ -314,7 +321,7 @@ def extract_with_toc(doc, img_prefix):
     valid_toc = [item for item in toc if item[1].strip() != ""]
     valid_toc.sort(key=lambda x: x[2]) # sort toc based on the page
     debug_print("debug_data", valid_toc)
-    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {truncate_string(doc_title, 67)}[/cyan]")):
+    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {truncate_string(doc_title, 67)}[/cyan]", console=console)):
         toc_lvl, toc_title, toc_page = toc_item
         toc_page -= 1  # toc is 1-based. convert to 0-based
         
@@ -330,22 +337,26 @@ def extract_with_toc(doc, img_prefix):
 def save_images(images, path):
     os.makedirs(f"{path}", exist_ok=True)
     debug_print("debug", f"Created folder {path} to save images")
-    for i, (key, value) in enumerate(images.items()):
-        try:
-            with open(f"{path}/{key}", "wb") as f:
-                debug_print("debug", f"Saving image {key}")
-                f.write(value)
-        except Exception as e:
-            debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
+
+    with console.status(f"Saving {len(images)} images to {path}..."):
+        for i, (key, value) in enumerate(images.items()):
+            try:
+                with open(f"{path}/{key}", "wb") as f:
+                    f.write(value)
+            except Exception as e:
+                debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
 
 def pdf_to_epub(pdf_path, output, img_prefix=""):
     global DO_SAVE_IMG, DEBUG_MODE
-
-    doc = pymupdf.open(pdf_path)
+    try:
+        doc = pymupdf.open(pdf_path)
+    except Exception as e:
+        debug_print("error", f"Failed to open PDF {pdf_path}: \n{e}")
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
     
-    print(f"[bold white]{'-'*10}Processing {pdf_filename}{'-'*10}[/bold white]")
-
+    console.print()
+    console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white"))
+    console.print()
     chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
 
     cover_image_name, cover_image_data = ("", "")
@@ -363,11 +374,16 @@ def pdf_to_epub(pdf_path, output, img_prefix=""):
         save_images(all_images, f"{output}/images_{pdf_filename}")
         debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
 
-    doc_author = doc.metadata.get("author", "")
-    doc_title = doc.metadata.get("title", pdf_filename)
-    create_epub(chapters, f"{output}/{pdf_filename}.epub", doc_title, doc_author, (cover_image_name, cover_image_data))
+    with console.status(f"Creating EPUB {output}/{pdf_filename}.epub..."):
+        doc_author = doc.metadata.get("author", "")
+        doc_title = doc.metadata.get("title", "").strip()
+        if doc_title == "":
+            doc_title = pdf_filename
+
+        try:
+            create_epub(chapters, f"{output}/{pdf_filename}.epub", doc_title, doc_author, (cover_image_name, cover_image_data))
+        except Exception as e:
+            debug_print("error", f"Failed to create EPUB {output}/{pdf_filename}.epub:\n{e}")
 
 if __name__ == "__main__":
     main()
-
-print("[green]Done[/green]")
