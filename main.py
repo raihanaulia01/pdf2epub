@@ -21,17 +21,18 @@ console = Console()
 @click.command()
 @click.option("--input", "-i", required=True, help="Input PDF file or folder path")
 @click.option("--output", "-o", default="output/", help="Output directory (default to output/)")
-@click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
 @click.option("--header-threshold", default=60, help="Header/footer threshold for text extraction. default is 60")
 @click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
 @click.option("--img-prefix", default="", help="Image prefix. Will be used to name the extracted images")
+@click.option("--author", help="Set author for current pdf(s). Will override author detected from pdf metadata")
+@click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
 # TODO edge case where the sentence is split into two pages. 
 #   e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
 
-def main(input, output, save_images, header_threshold, img_threshold, img_prefix, debug):
+def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
     
     HEADER_FOOTER_THRESHOLD = header_threshold
@@ -42,19 +43,19 @@ def main(input, output, save_images, header_threshold, img_threshold, img_prefix
     time_start = curr_time()
     os.makedirs(output, exist_ok=True)
     filetype_error = True
-    pdf_counter = 1
+    pdf_counter = 0
 
     if os.path.isfile(input):
         if input.lower().endswith(".pdf"):
-            pdf_to_epub(input, output, img_prefix=img_prefix)
+            pdf_to_epub(input, output, img_prefix=img_prefix, author=author)
             filetype_error = False
     elif os.path.isdir(input):
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
+                pdf_counter += 1
                 filetype_error = False
                 pdf_path = os.path.join(input, filename)
-                pdf_to_epub(pdf_path, output, img_prefix=f"{img_prefix}_{pdf_counter}" if img_prefix else "")
-                pdf_counter += 1
+                pdf_to_epub(pdf_path, output, img_prefix=f"{img_prefix}_{pdf_counter}" if img_prefix else "", author=author)
     else:
         debug_print("error", f"Error: {input} is not a valid file or directory")
         return
@@ -229,7 +230,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
     debug_print("debug", f"extracting pdf {doc_title} from {start} to {end}")
 
     if show_progress:
-        page_range = track(page_range, description=f"[cyan]Processing {doc_title}[/cyan]", console=console)
+        page_range = track(page_range, description=f"[cyan]Processing PDF...[/cyan]", console=console)
 
     for i in page_range:
         page = doc[i]
@@ -329,7 +330,7 @@ def extract_with_toc(doc, img_prefix):
     valid_toc = [item for item in toc if item[1].strip() != ""]
     valid_toc.sort(key=lambda x: x[2]) # sort toc based on the page
     debug_print("debug_data", valid_toc)
-    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters for {truncate_string(doc_title, 67)}[/cyan]", console=console)):
+    for i, toc_item in enumerate(track(valid_toc, description=f"[cyan]Processing chapters...[/cyan]", console=console)):
         toc_lvl, toc_title, toc_page = toc_item
         toc_page -= 1  # toc is 1-based. convert to 0-based
         
@@ -354,7 +355,7 @@ def save_images(images, path):
             except Exception as e:
                 debug_print("error", f"Error saving image {i} at {path}/{key}. Full error below.\n{e}")
 
-def pdf_to_epub(pdf_path, output, img_prefix=""):
+def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
     global DO_SAVE_IMG, DEBUG_MODE
     try:
         doc = pymupdf.open(pdf_path)
@@ -383,7 +384,8 @@ def pdf_to_epub(pdf_path, output, img_prefix=""):
         debug_print("success", f"Saved images to {output}/images_{pdf_filename}")
 
     with console.status(f"Creating EPUB {output}/{pdf_filename}.epub..."):
-        doc_author = doc.metadata.get("author", "")
+        doc_author = author if author else doc.metadata.get("author", "")
+        debug_print("debug", f"Arg author: {author} Detected author: {doc.metadata.get("author", "")}")
         doc_title = doc.metadata.get("title", "").strip()
         if doc_title == "":
             doc_title = pdf_filename
