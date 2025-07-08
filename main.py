@@ -474,7 +474,7 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
         if final_path:
             if DO_SAVE_IMG:
                 debug_print("spacing", "")
-                img_output_dir = os.path.normpath(f"{os.path.splitext(final_path)[0]}\\images_{pdf_filename}")
+                img_output_dir = os.path.normpath(f"{os.path.splitext(final_path)[0]}_images")
                 handle_save_images(chapters, img_output_dir)
 
             create_epub(chapters, final_path, doc_title, doc_author, (cover_image_name, cover_image_data))
