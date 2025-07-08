@@ -15,6 +15,18 @@ HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
 DEBUG_MODE = False
 DO_SAVE_IMG = False
+SHOULD_OVERWRITE = False
+SKIP_ALL_FILES = False
+RENAME_ALL_FILES = False
+
+LEVEL_COLOR = {
+    "info": "white",
+    "debug": "cyan",
+    "success": "bold green",
+    "warning": "bold yellow",
+    "error": "bold bright_red",
+    "spacing": ""
+}
 
 console = Console()
 
@@ -26,19 +38,34 @@ console = Console()
 @click.option("--img-prefix", default="", help="Image prefix. Will be used to name the extracted images")
 @click.option("--author", help="Set author for current pdf(s). Will override author detected from pdf metadata")
 @click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
+@click.option("--overwrite", is_flag=True, help="Overwrite files that already exists")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
 # TODO edge case where the sentence is split into two pages. 
-#   e.g. "test \pagebreak\ sentence". this won't combine properly using the current method
+#   e.g. <p>test</p> \pagebreak\ <p>sentence</p>. this won't combine properly using the current method
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
+# TODO add confirmation to overwrite when file already exist. 
+#   maybe:  File {output} already exists. Overwrite?\n [yellow][Y] Yes[/yellow] [A] Yes to all [N] No [L] No to all [R] Rename [M] Rename all [?] Help (Default is "Y"): 
+#           [Y] - Overwrite this file 
+#           [A] - Overwrite all files (Yes to all)
+#           [N] - Skip this file
+#           [L] - Skip all files 
+#           [R] - Rename files
+#           [M] - Rename all files (R to all)
+#           [?] - Show this help menu
+#   Also add click option --overwrite 
+#   ? Add option to rename (add _1 or (1)) 
+# TODO option to manually create TOC
+#   ? based on pages in pdf and create a toc
 
-def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, debug):
-    global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG
+def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, overwrite, debug):
+    global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG, SHOULD_OVERWRITE
     
     HEADER_FOOTER_THRESHOLD = header_threshold
     IGNORE_IMAGE_THRESHOLD = img_threshold
     DEBUG_MODE = debug
     DO_SAVE_IMG = save_images
+    SHOULD_OVERWRITE = overwrite
     
     time_start = curr_time()
     os.makedirs(output, exist_ok=True)
@@ -53,6 +80,7 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
         if input.lower().endswith(".pdf"):
             pdf_to_epub(input, output, img_prefix=img_prefix, author=author)
             filetype_error = False
+            pdf_counter += 1
     elif os.path.isdir(input):
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
@@ -69,20 +97,17 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
         return
     
     time_end = curr_time()
-    console.print('')
+    debug_print("spacing", "")
     debug_print("success", f"Finished converting {pdf_counter} PDFs in {round((time_end - time_start), 3)} seconds")
 
 def debug_print(level, text, i=None):
     global DEBUG_MODE
     level = level.lower()
-    level_color = {
-        "info": "white",
-        "debug": "cyan",
-        "success": "bold green",
-        "warning": "bold yellow",
-        "error": "bold bright_red",
-    }
 
+    if level == "spacing":
+        if not DEBUG_MODE: console.print()
+        return
+    
     if i == None:
         print_text = text
     else:
@@ -94,32 +119,79 @@ def debug_print(level, text, i=None):
     if DEBUG_MODE:
         context = inspect.currentframe().f_back.f_code.co_name
         if level in ("success", "warning", "error"):
-            context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [{level_color[level]}]{level.upper():<9}[/{level_color[level]}] | [bright_blue]{context}[/bright_blue] - "
+            context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [{LEVEL_COLOR[level]}]{level.upper():<9}[/{LEVEL_COLOR[level]}] | [bright_blue]{context}[/bright_blue] - "
         else: 
             context = f"[green]{str(datetime.datetime.now())[:-4]}[/green] | [bold white]{level.upper():<9}[/bold white] | [bright_blue]{context}[/bright_blue] - "
 
-    if level in level_color and level not in ("debug", "debug_data"):
-        console.print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+    if level in LEVEL_COLOR and level not in ("debug", "debug_data"):
+        console.print(f"{context}[{LEVEL_COLOR[level]}]{print_text}[/{LEVEL_COLOR[level]}]")
     if DEBUG_MODE:
         if level == "debug":
-            console.print(f"{context}[{level_color[level]}]{print_text}[/{level_color[level]}]")
+            console.print(f"{context}[{LEVEL_COLOR[level]}]{print_text}[/{LEVEL_COLOR[level]}]")
         elif level == "debug_data":
             console.print(text)
 
+def handle_rename_file(output_path):
+    base, ext = os.path.splitext(output_path)
+    counter = 1
+    while os.path.exists(f"{base}_{counter}{ext}"):
+        counter += 1
+    debug_print("debug", f"Rename output to {base} ({counter}){ext}")
+    return f"{base} ({counter}){ext}"
+    
+def handle_file_overwrite(output_path):
+    global SHOULD_OVERWRITE, SKIP_ALL_FILES, RENAME_ALL_FILES
+
+    if not os.path.exists(output_path) or SHOULD_OVERWRITE:
+        return output_path
+    if SKIP_ALL_FILES:
+        return None
+    if RENAME_ALL_FILES:
+        return handle_rename_file(output_path)
+
+    while True:
+        debug_print("debug", f"File {output_path} already exists. Handling file overwrite...")
+        choice = console.input(f"\n[bright_white]File \"{output_path}\" already exists. Overwrite?\n [bright_yellow][Y] Yes[/bright_yellow] [A] Yes to all [N] No [L] No to all [R] Rename [M] Rename all [?] Help (Default is Y): [/bright_white]").strip().upper()
+        debug_print("debug", f"User picked {choice}")
+        if choice == "Y":
+            return output_path
+        elif choice == "A":
+            SHOULD_OVERWRITE = True
+            return output_path
+        elif choice == "N":
+            return None
+        elif choice == "L":
+            SKIP_ALL_FILES = True
+            return None
+        elif choice == "R":
+            return handle_rename_file(output_path)
+        elif choice == "M":
+            RENAME_ALL_FILES = True
+            return handle_rename_file(output_path)
+        elif choice == "?":
+            console.print("[Y] - Overwrite this file ")
+            console.print("[A] - Overwrite all files (Yes to all)")
+            console.print("[N] - Skip this file")
+            console.print("[L] - Skip all files")
+            console.print("[R] - Rename files")
+            console.print("[M] - Rename all files (R to all)")
+            console.print("[?] - Show this help menu")
+        elif choice == "": 
+            return output_path
 
 def create_epub(chapters, output_filename, title, author, cover_image=None):
-    console.print('')
-    debug_print("info", f"Creating EPUB {output_filename}")
+    debug_print("spacing", "")
+    debug_print("info", f"Creating EPUB {output_filename}...")
     book = epub.EpubBook()
     book.set_identifier("")
     book.set_title(title)
     debug_print("info", f"Set title to [cyan]\"{title}\"[/cyan]")
     book.set_language("en")
     book.add_author(author)
-    debug_print("info", f"Set author to [cyan]\"{author}\"[/cyan]") if author else debug_print("warning", "Author not detected in metadata")
+    debug_print("info", f"Set author to [cyan]\"{author}\"[/cyan]") if author else debug_print("warning", "Author not detected")
 
     if cover_image[0] and cover_image[1]:
-        debug_print("debug", f"Adding cover image {cover_image[0]}")
+        debug_print("debug", f"Adding cover image: {cover_image[0]}")
         book.set_cover(cover_image[0], cover_image[1])
     
     epub_chapters = []
@@ -146,9 +218,13 @@ def create_epub(chapters, output_filename, title, author, cover_image=None):
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     
-    # Write the EPUB file
-    epub.write_epub(output_filename, book)
-    debug_print("success", f"EPUB file '{output_filename}' created successfully.\n")
+    with console.status(f"Writing epub file..."):
+        try:
+            epub.write_epub(output_filename, book)
+            debug_print("success", f"EPUB file '{output_filename}' created successfully.")
+            debug_print("spacing", "")
+        except Exception as e:
+            debug_print("error", f"Failed to write epub {output_filename}:\n{e}")
 
 def handle_extract_with_font(span):
     span_font = span["font"].lower()
@@ -296,7 +372,7 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
                     continue
                 image_height = image_rects[3] - image_rects[1]
                 full_img_filename = f"{img_prefix}-page_{i+1}-full_{index}.png"
-                debug_print("debug", f"FULL_IMG | {full_img_filename}")
+                debug_print("debug", f"Processing image {full_img_filename}")
 
                 if xref == 0:
                     continue
@@ -323,6 +399,7 @@ def extract_with_toc(doc, img_prefix):
     
     if not toc:
         debug_print("warning", "Table of contents not found. This book will not have any TOC.")
+        debug_print("spacing", "")
         content, images = extract_pdf(doc, img_prefix=img_prefix, show_progress=True)
         return [(img_prefix, content, images)]
        
@@ -345,7 +422,11 @@ def extract_with_toc(doc, img_prefix):
 
     return chapter_list
 
-def save_images(images, path):
+def handle_save_images(chapters, path):
+    images = {}
+    for chapter in chapters:
+        images.update(chapter[2])
+
     os.makedirs(f"{path}", exist_ok=True)
     debug_print("debug", f"Created folder {path} to save images")
 
@@ -357,6 +438,8 @@ def save_images(images, path):
             except Exception as e:
                 debug_print("error", f"Error saving image {i} at {path}\\{key}. Full error below.\n{e}")
 
+    debug_print("info", f"Saved {len(images)} images to {path}")
+
 def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
     global DO_SAVE_IMG, DEBUG_MODE
 
@@ -366,9 +449,9 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
         debug_print("error", f"Failed to open PDF {pdf_path}: \n{e}")
     pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
     
-    console.print()
+    debug_print("spacing", "")
     console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white", align="left"))
-    console.print()
+    debug_print("spacing", "")
     chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
 
     cover_image_name, cover_image_data = ("", "")
@@ -378,26 +461,27 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
     except:
         debug_print("warning", "No cover image detected")
 
-    if DO_SAVE_IMG:
-        all_images = {}
-        for chapter in chapters:
-            all_images.update(chapter[2])
-        img_output_dir = os.path.normpath(f"{output}\\images_{pdf_filename}")
-        save_images(all_images, img_output_dir)
-        debug_print("success", f"Saved images to {img_output_dir}")
-
     output_epub = os.path.normpath(f"{output}\\{pdf_filename}.epub")
-    with console.status(f"Creating EPUB {output_epub}..."):
-        doc_author = author if author else doc.metadata.get("author", "")
-        debug_print("debug", f"Arg author: {author} Detected author: {doc.metadata.get("author", "")}")
-        doc_title = doc.metadata.get("title", "").strip()
-        if doc_title == "":
-            doc_title = pdf_filename
 
-        try:
-            create_epub(chapters, output_epub, doc_title, doc_author, (cover_image_name, cover_image_data))
-        except Exception as e:
-            debug_print("error", f"Failed to create EPUB {output_epub}:\n{e}")
+    doc_author = author if author else doc.metadata.get("author", "")
+    debug_print("debug", f"User selected author: {author} / Detected author: {doc.metadata.get("author", "")}")
+    doc_title = doc.metadata.get("title", "").strip()
+    if doc_title == "":
+        doc_title = pdf_filename
+
+    try:
+        final_path = handle_file_overwrite(output_epub)
+        if final_path:
+            if DO_SAVE_IMG:
+                debug_print("spacing", "")
+                img_output_dir = os.path.normpath(f"{os.path.splitext(final_path)[0]}\\images_{pdf_filename}")
+                handle_save_images(chapters, img_output_dir)
+
+            create_epub(chapters, final_path, doc_title, doc_author, (cover_image_name, cover_image_data))
+        else:
+            debug_print("info", f"Skipping {output_epub}")
+    except Exception as e:
+        debug_print("error", f"Failed to create EPUB {output_epub}:\n{e}")
 
 if __name__ == "__main__":
     main()
