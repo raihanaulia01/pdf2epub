@@ -44,17 +44,6 @@ console = Console()
 # TODO edge case where the sentence is split into two pages. 
 #   e.g. <p>test</p> \pagebreak\ <p>sentence</p>. this won't combine properly using the current method
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
-# TODO add confirmation to overwrite when file already exist. 
-#   maybe:  File {output} already exists. Overwrite?\n [yellow][Y] Yes[/yellow] [A] Yes to all [N] No [L] No to all [R] Rename [M] Rename all [?] Help (Default is "Y"): 
-#           [Y] - Overwrite this file 
-#           [A] - Overwrite all files (Yes to all)
-#           [N] - Skip this file
-#           [L] - Skip all files 
-#           [R] - Rename files
-#           [M] - Rename all files (R to all)
-#           [?] - Show this help menu
-#   Also add click option --overwrite 
-#   ? Add option to rename (add _1 or (1)) 
 # TODO option to manually create TOC
 #   ? based on pages in pdf and create a toc
 
@@ -73,26 +62,23 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     output = os.path.normpath(output)
     debug_print("debug", f"Input  : {input}")
     debug_print("debug", f"Output : {output}")
-    filetype_error = True
     pdf_counter = 0
 
     if os.path.isfile(input):
         if input.lower().endswith(".pdf"):
             pdf_to_epub(input, output, img_prefix=img_prefix, author=author)
-            filetype_error = False
             pdf_counter += 1
     elif os.path.isdir(input):
         for filename in os.listdir(input):
             if filename.lower().endswith('.pdf'):
                 pdf_counter += 1
-                filetype_error = False
                 pdf_path = os.path.join(input, filename)
                 pdf_to_epub(pdf_path, output, img_prefix=f"{img_prefix}_{pdf_counter}" if img_prefix else "", author=author)
     else:
         debug_print("error", f"Error: {input} is not a valid file or directory")
         return
     
-    if filetype_error:
+    if pdf_counter == 0:
         debug_print("error", f"Error: {input} is not or has no PDF.")
         return
     
