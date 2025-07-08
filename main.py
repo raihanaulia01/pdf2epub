@@ -34,7 +34,7 @@ console = Console()
 @click.option("--input", "-i", required=True, help="Input PDF file or folder path")
 @click.option("--output", "-o", default="output/", help="Output directory (default to output/)")
 @click.option("--header-threshold", default=60, help="Header/footer threshold for text extraction. default is 60")
-@click.option("--img-threshold", default=0.7, help="Image extraction threshold. default is 0.7")
+@click.option("--img-threshold", default=0.7, help="Image extraction region (0.0-1.0). Only extracts images from the top portion of each PDF page. For example, 0.7 extracts images from the top 70% of the page, ignoring the bottom 30%. Default: 0.7")
 @click.option("--img-prefix", default="", help="Image prefix. Will be used to name the extracted images")
 @click.option("--author", help="Set author for current pdf(s). Will override author detected from pdf metadata")
 @click.option("--save-images", is_flag=True, help="Save extracted images from input pdf to disk")
@@ -46,10 +46,18 @@ console = Console()
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
 # TODO option to manually create TOC
 #   ? based on pages in pdf and create a toc
+# TODO add recursive function (--recursive, -r)? 
+#   just for fun. maybe add tag to preserve folder structure
+# TODO add input sanitation for --img-prefix
+#   in the main function
 
 def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, overwrite, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG, SHOULD_OVERWRITE
     
+    if img_threshold > 1 or img_threshold < 0:
+        debug_print("error", f"Error: --img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
+        return
+
     HEADER_FOOTER_THRESHOLD = header_threshold
     IGNORE_IMAGE_THRESHOLD = img_threshold
     DEBUG_MODE = debug
