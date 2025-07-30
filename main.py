@@ -10,6 +10,7 @@ import re
 import inspect
 import datetime
 from time import time as curr_time
+import pathvalidate
 
 HEADER_FOOTER_THRESHOLD = 60
 IGNORE_IMAGE_THRESHOLD = 0.7
@@ -42,14 +43,19 @@ console = Console()
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 
 # TODO edge case where the sentence is split into two pages. 
-#   e.g. <p>test</p> \pagebreak\ <p>sentence</p>. this won't combine properly using the current method
+#   e.g. "<p>test</p> \pagebreak\ <p>sentence</p>" won't combine properly using the current method 
+#       ? check if page starts with a lowercase letter
 #   also when a 'new line' starts with an uppercase letter, but the sentence isn't actually finished yet.
+#       ? check punctuation
 # TODO option to manually create TOC
 #   ? based on pages in pdf and create a toc
 # TODO add recursive function (--recursive, -r)? 
 #   just for fun. maybe add tag to preserve folder structure
-# TODO add input sanitation for --img-prefix
-#   in the main function
+# TODO add input sanitation for --img-prefix, migrate to use pathvalidate library
+#   in the main function. exit when prefix isn't valid
+# TODO make the default output/ absolute to avoid confusion
+# TODO create a tool to extract text from a specific page. 
+#   make this a separate tool from the pdf2epub.
 
 def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, overwrite, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG, SHOULD_OVERWRITE
