@@ -63,18 +63,18 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     if img_threshold > 1 or img_threshold < 0:
         debug_print("error", f"Error: --img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
         return
-    
-    try:
-        pathvalidate.validate_filename(img_prefix)
-    except pathvalidate.ValidationError as v_error:
-        debug_print("error", f"--img-prefix argument is not a valid filename: {v_error}")
-        return
         
     HEADER_FOOTER_THRESHOLD = header_threshold
     IGNORE_IMAGE_THRESHOLD = img_threshold
     DEBUG_MODE = debug
     DO_SAVE_IMG = save_images
     SHOULD_OVERWRITE = overwrite
+    
+    try:
+        pathvalidate.validate_filename(img_prefix)
+    except pathvalidate.ValidationError as v_error:
+        debug_print("error", f"--img-prefix argument is not a valid filename: {v_error}")
+        return
     
     time_start = curr_time()
     os.makedirs(output, exist_ok=True)
