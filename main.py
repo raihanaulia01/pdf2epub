@@ -59,6 +59,7 @@ console = Console()
 
 def main(input, output, author, save_images, header_threshold, img_threshold, img_prefix, overwrite, debug):
     global HEADER_FOOTER_THRESHOLD, IGNORE_IMAGE_THRESHOLD, DEBUG_MODE, DO_SAVE_IMG, SHOULD_OVERWRITE
+    DEBUG_MODE = debug
     
     if img_threshold > 1 or img_threshold < 0:
         debug_print("error", f"Error: --img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
@@ -66,7 +67,6 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
         
     HEADER_FOOTER_THRESHOLD = header_threshold
     IGNORE_IMAGE_THRESHOLD = img_threshold
-    DEBUG_MODE = debug
     DO_SAVE_IMG = save_images
     SHOULD_OVERWRITE = overwrite
     
