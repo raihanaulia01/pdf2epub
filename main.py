@@ -6,7 +6,7 @@ from rich import print as print
 from rich.console import Console
 from rich.rule import Rule
 import click
-import re
+# import re -> used in sanitize_filename, migrated to use pathvalidate
 import inspect
 import datetime
 from time import time as curr_time
@@ -63,7 +63,13 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     if img_threshold > 1 or img_threshold < 0:
         debug_print("error", f"Error: --img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
         return
-
+    
+    try:
+        pathvalidate.validate_filename(img_prefix)
+    except pathvalidate.ValidationError as v_error:
+        debug_print("error", f"--img-prefix argument is not a valid filename: {v_error}")
+        return
+        
     HEADER_FOOTER_THRESHOLD = header_threshold
     IGNORE_IMAGE_THRESHOLD = img_threshold
     DEBUG_MODE = debug
@@ -290,11 +296,12 @@ def extract_img_from_xref(doc, xref):
         debug_print("error", f"Failed to extract image xref={xref}:\n{e}")
 
 def sanitize_filename(filename, max_len=40):
-    filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
-    filename = re.sub(r'\s+', '_', filename.strip())
-    if len(filename) > max_len:
-        filename = filename[:max_len]
-    return filename
+    return pathvalidate.sanitize_filename(filename=filename)
+    # filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
+    # filename = re.sub(r'\s+', '_', filename.strip())
+    # if len(filename) > max_len:
+    #     filename = filename[:max_len]
+    # return filename
 
 def truncate_string(text, max_len):
     if len(text) > max_len:
