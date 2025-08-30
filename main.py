@@ -71,7 +71,7 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     SHOULD_OVERWRITE = overwrite
     
     try:
-        pathvalidate.validate_filename(img_prefix)
+        if img_prefix: pathvalidate.validate_filename(img_prefix)
     except pathvalidate.ValidationError as v_error:
         debug_print("error", f"--img-prefix argument is not a valid filename: {v_error}")
         return
@@ -80,6 +80,7 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     os.makedirs(output, exist_ok=True)
     input = os.path.normpath(input)
     output = os.path.normpath(output)
+    if SHOULD_OVERWRITE: debug_print("warning", "Force overwrite turned on.")
     debug_print("debug", f"Input  : {input}")
     debug_print("debug", f"Output : {output}")
     pdf_counter = 0
