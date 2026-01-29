@@ -297,7 +297,7 @@ def extract_img_from_xref(doc, xref):
         debug_print("error", f"Failed to extract image xref={xref}:\n{e}")
 
 def sanitize_filename(filename, max_len=40):
-    return pathvalidate.sanitize_filename(filename=filename)
+    return pathvalidate.sanitize_filename(filename=filename, max_len=max_len)
     # filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
     # filename = re.sub(r'\s+', '_', filename.strip())
     # if len(filename) > max_len:
