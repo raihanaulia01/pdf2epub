@@ -51,7 +51,6 @@ console = Console()
 #   ? based on pages in pdf and create a toc
 # TODO add recursive function (--recursive, -r)? 
 #   just for fun. maybe add tag to preserve folder structure
-# TODO make the default output/ absolute to avoid confusion
 # TODO create a tool to extract text from a specific page. 
 #   make this a separate tool from the pdf2epub.
 
@@ -184,7 +183,7 @@ def handle_file_overwrite(output_path):
             console.print("[A] - Overwrite all files (Yes to all)")
             console.print("[N] - Skip this file")
             console.print("[L] - Skip all files")
-            console.print("[R] - Rename files")
+            console.print("[R] - Rename file")
             console.print("[M] - Rename all files (R to all)")
             console.print("[?] - Show this help menu")
         elif choice == "": 
@@ -302,11 +301,6 @@ def extract_img_from_xref(doc, xref):
 
 def sanitize_filename(filename, max_len=40):
     return pathvalidate.sanitize_filename(filename=filename, max_len=max_len)
-    # filename = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', filename)
-    # filename = re.sub(r'\s+', '_', filename.strip())
-    # if len(filename) > max_len:
-    #     filename = filename[:max_len]
-    # return filename
 
 def truncate_string(text, max_len):
     if len(text) > max_len:
@@ -347,8 +341,8 @@ def extract_pdf(doc: pymupdf.Document,start=0, end=None, img_prefix="", show_pro
                 img_filename = f"{img_prefix}-page_{i+1}-image_{img_count}.png"
 
                 # ignores images in headers and bottom part of the page (use threshold)
-                if not takes_full_page(img_bbox, page.rect) and (
-                    (img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) or in_header_footer(img_bbox, page_height)): 
+                if not takes_full_page(img_bbox, page.rect) and ((img_bbox[1] > page_height * IGNORE_IMAGE_THRESHOLD) 
+                                                                 or in_header_footer(img_bbox, page_height)): 
                     debug_print("debug", f"ignored image {img_filename} bbox: {img_bbox}", i=i)
                     ignored_images.add(img_bbox)
                     continue
