@@ -33,7 +33,7 @@ console = Console()
 
 @click.command()
 @click.option("--input", "-i", required=True, help="Input PDF file or folder path")
-@click.option("--output", "-o", default="output/", help="Output directory (default to output/)")
+@click.option("--output", "-o", required=True, help="Output directory (default to output/)")
 @click.option("--header-threshold", default=60, help="Header/footer threshold for text extraction. default is 60")
 @click.option("--img-threshold", default=0.7, help="Image extraction region (0.0-1.0). Only extracts images from the top portion of each PDF page. For example, 0.7 extracts images from the top 70% of the page, ignoring the bottom 30%. Default: 0.7")
 @click.option("--img-prefix", default="", help="Image prefix. Will be used to name the extracted images")
@@ -51,8 +51,6 @@ console = Console()
 #   ? based on pages in pdf and create a toc
 # TODO add recursive function (--recursive, -r)? 
 #   just for fun. maybe add tag to preserve folder structure
-# TODO add input sanitation for --img-prefix, migrate to use pathvalidate library
-#   in the main function. exit when prefix isn't valid
 # TODO make the default output/ absolute to avoid confusion
 # TODO create a tool to extract text from a specific page. 
 #   make this a separate tool from the pdf2epub.
@@ -71,9 +69,15 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     SHOULD_OVERWRITE = overwrite
     
     try:
-        if img_prefix: pathvalidate.validate_filename(img_prefix)
+        if img_prefix: pathvalidate.validate_filename(img_prefix, platform="auto")
     except pathvalidate.ValidationError as v_error:
-        debug_print("error", f"--img-prefix argument is not a valid filename: {v_error}")
+        debug_print("error", f"--img-prefix argument is not a valid file name: {v_error}")
+        return
+    
+    try:
+        if output: pathvalidate.validate_filepath(output, platform="auto")
+    except pathvalidate.ValidationError as v_error:
+        debug_print("error", f"--output argument is not a valid file path: {v_error}")
         return
     
     time_start = curr_time()
