@@ -2,11 +2,9 @@ import pymupdf
 from ebooklib import epub
 import os
 from rich.progress import track
-from rich import print as print
 from rich.console import Console
 from rich.rule import Rule
 import click
-# import re -> used in sanitize_filename, migrated to use pathvalidate
 import inspect
 import datetime
 from time import time as curr_time
@@ -59,7 +57,7 @@ def main(input, output, author, save_images, header_threshold, img_threshold, im
     DEBUG_MODE = debug
     
     if img_threshold > 1 or img_threshold < 0:
-        debug_print("error", f"Error: --img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
+        debug_print("error", f"--img-threshold must be between 0.0 and 1.0. Got {img_threshold}")
         return
         
     HEADER_FOOTER_THRESHOLD = header_threshold
@@ -146,8 +144,8 @@ def handle_rename_file(output_path):
     counter = 1
     while os.path.exists(f"{base}_{counter}{ext}"):
         counter += 1
-    debug_print("debug", f"Rename output to {base} ({counter}){ext}")
-    return f"{base} ({counter}){ext}"
+    debug_print("debug", f"Rename output to {base}_({counter}){ext}")
+    return f"{base}_({counter}){ext}"
     
 def handle_file_overwrite(output_path):
     global SHOULD_OVERWRITE, SKIP_ALL_FILES, RENAME_ALL_FILES
@@ -453,41 +451,46 @@ def pdf_to_epub(pdf_path, output, img_prefix="", author=None):
         doc = pymupdf.open(pdf_path)
     except Exception as e:
         debug_print("error", f"Failed to open PDF {pdf_path}: \n{e}")
-    pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
+        return
     
-    debug_print("spacing", "")
-    console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white", align="left"))
-    debug_print("spacing", "")
-    chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
-
-    cover_image_name, cover_image_data = ("", "")
     try:
-        cover_image_name = next(iter(chapters[0][2].keys()))
-        cover_image_data = chapters[0][2][cover_image_name]
-    except:
-        debug_print("warning", "No cover image detected")
+        pdf_filename = os.path.splitext(os.path.basename(pdf_path))[0].strip()
+        
+        debug_print("spacing", "")
+        console.print(Rule(f"[bold white]Processing {pdf_filename}[/bold white]", style="bold white", align="left"))
+        debug_print("spacing", "")
+        chapters = extract_with_toc(doc, img_prefix if img_prefix else pdf_filename)
 
-    output_epub = os.path.normpath(f"{output}\\{pdf_filename}.epub")
+        cover_image_name, cover_image_data = ("", "")
+        try:
+            cover_image_name = next(iter(chapters[0][2].keys()))
+            cover_image_data = chapters[0][2][cover_image_name]
+        except IndexError:
+            debug_print("warning", "No cover image detected")
 
-    doc_author = author if author else doc.metadata.get("author", "")
-    debug_print("debug", f"User selected author: {author} / Detected author: {doc.metadata.get("author", "")}")
-    doc_title = doc.metadata.get("title", "").strip()
-    if doc_title == "":
-        doc_title = pdf_filename
+        output_epub = os.path.join(output, f"{pdf_filename}.epub")
 
-    try:
-        final_path = handle_file_overwrite(output_epub)
-        if final_path:
-            if DO_SAVE_IMG:
-                debug_print("spacing", "")
-                img_output_dir = os.path.normpath(f"{os.path.splitext(final_path)[0]}_images")
-                handle_save_images(chapters, img_output_dir)
+        doc_author = author if author else doc.metadata.get("author", "")
+        debug_print("debug", f"User selected author: {author} / Detected author: {doc.metadata.get("author", "")}")
+        doc_title = doc.metadata.get("title", "").strip()
+        if doc_title == "":
+            doc_title = pdf_filename
 
-            create_epub(chapters, final_path, doc_title, doc_author, (cover_image_name, cover_image_data))
-        else:
-            debug_print("info", f"Skipping {output_epub}")
-    except Exception as e:
-        debug_print("error", f"Failed to create EPUB {output_epub}:\n{e}")
+        try:
+            final_path = handle_file_overwrite(output_epub)
+            if final_path:
+                if DO_SAVE_IMG:
+                    debug_print("spacing", "")
+                    img_output_dir = os.path.normpath(f"{os.path.splitext(final_path)[0]}_images")
+                    handle_save_images(chapters, img_output_dir)
+
+                create_epub(chapters, final_path, doc_title, doc_author, (cover_image_name, cover_image_data))
+            else:
+                debug_print("info", f"Skipping {output_epub}")
+        except Exception as e:
+            debug_print("error", f"Failed to create EPUB {output_epub}:\n{e}")
+    finally:
+        doc.close()
 
 if __name__ == "__main__":
     main()
